@@ -1,41 +1,40 @@
-#include <WString.h>
 #include <ArduinoJson.h>
-
-struct DeviceAssetConnection
-{
-    IPAddress ip;
-    int port;
-};
 
 struct DeviceAsset
 {
-    String id;
-    String sn;
-    String type;
+    std::string id;
+    std::string sn;
+    std::string type;
 
-    // used internally for udp messaging
-    DeviceAssetConnection connection;
+    // optional ones
+    IPAddress address = IPAddress();
+    uint port = 0;
 
-    String toJson()
+    std::string toJson()
     {
         DynamicJsonDocument doc(1024);
         doc["id"] = id;
         doc["type"] = type;
         doc["attributes"]["sn"]["value"] = sn;
 
-        String output;
+        std::string output;
         serializeJson(doc, output);
         return output;
     }
 
-    static DeviceAsset fromJson(String json)
+    std::string toString()
+    {
+        return "id: " + id + ", sn: " + sn + ", type: " + type;
+    }
+
+    static DeviceAsset fromJson(std::string json)
     {
         DynamicJsonDocument doc(1024);
         deserializeJson(doc, json);
         DeviceAsset asset;
-        asset.id = doc["id"].as<String>();
-        asset.type = doc["type"].as<String>();
-        asset.sn = doc["attributes"]["sn"]["value"].as<String>();
+        asset.id = doc["id"].as<std::string>();
+        asset.type = doc["type"].as<std::string>();
+        asset.sn = doc["attributes"]["sn"]["value"].as<std::string>();
         return asset;
     }
 };

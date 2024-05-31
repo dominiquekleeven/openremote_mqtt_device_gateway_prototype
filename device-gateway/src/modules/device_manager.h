@@ -26,6 +26,7 @@ public:
     {
     }
 
+    /// @brief Initialize the device manager
     void init()
     {
         Serial.println("+ Device Manager initialized");
@@ -51,13 +52,15 @@ public:
         }
     }
 
-    void updateOrAddConnection(std::string sn, DeviceAssetConnection connection)
+    /// @brief Set the connection details for a device
+    void setConnection(std::string deviceSerial, IPAddress address, uint port)
     {
         for (int i = 0; i < assets.size(); i++)
         {
-            if (assets[i].sn.c_str() == sn.c_str())
+            if (assets[i].sn.c_str() == deviceSerial)
             {
-                assets[i].connection = connection;
+                assets[i].address = address;
+                assets[i].port = port;
                 return;
             }
         }
@@ -122,7 +125,9 @@ public:
         Serial.println("Device count: " + String(count));
     }
 
-    String getDeviceAssetId(std::string deviceSerial)
+    /// @brief Get the device asset ID by device serial number
+    /// @param deviceSerial
+    std::string getDeviceAssetId(std::string deviceSerial)
     {
         for (int i = 0; i < assets.size(); i++)
         {
@@ -140,6 +145,20 @@ public:
         for (int i = 0; i < assets.size(); i++)
         {
             if (assets[i].sn.c_str() == deviceSerial)
+            {
+                return assets[i];
+            }
+        }
+        return DeviceAsset();
+    }
+
+    /// @brief Get a device asset by ID
+    /// @param id
+    DeviceAsset getDeviceAssetById(std::string id)
+    {
+        for (int i = 0; i < assets.size(); i++)
+        {
+            if (assets[i].id == id.c_str())
             {
                 return assets[i];
             }

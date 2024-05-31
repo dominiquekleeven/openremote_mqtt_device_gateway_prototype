@@ -1,4 +1,4 @@
-#include <WString.h>
+
 #include <ArduinoJson.h>
 
 // onboarding messages
@@ -13,18 +13,19 @@
 enum MessageType
 {
     ONBOARD_MESSAGE,
-    DATA_MESSAGE
+    DATA_MESSAGE,
+    ALIVE_MESSAGE
 };
 
 struct DeviceMessage
 {
-    String device_name;
-    String device_sn;
-    String device_type;
-    String data;
+    std::string device_name;
+    std::string device_sn;
+    std::string device_type;
+    std::string data;
     MessageType message_type;
 
-    DeviceMessage(String device_name, String device_sn, String device_type, String data, MessageType message_type)
+    DeviceMessage(std::string device_name, std::string device_sn, std::string device_type, std::string data, MessageType message_type)
     {
         this->device_name = device_name;
         this->device_sn = device_sn;
@@ -33,7 +34,7 @@ struct DeviceMessage
         this->message_type = message_type;
     }
 
-    String toJson()
+    std::string toJson()
     {
         DynamicJsonDocument doc(1024);
         doc["device_name"] = device_name;
@@ -42,15 +43,15 @@ struct DeviceMessage
         doc["data"] = data;
         doc["message_type"] = (int)message_type;
 
-        String output;
+        std::string output;
         serializeJson(doc, output);
         return output;
     }
 
-    static DeviceMessage fromJson(String json)
+    static DeviceMessage fromJson(std::string json)
     {
         DynamicJsonDocument doc(1024);
         deserializeJson(doc, json);
-        return DeviceMessage(doc["device_name"].as<String>(), doc["device_sn"].as<String>(), doc["device_type"].as<String>(), doc["data"].as<String>(), (MessageType)doc["message_type"].as<int>());
+        return DeviceMessage(doc["device_name"].as<std::string>(), doc["device_sn"].as<std::string>(), doc["device_type"].as<std::string>(), doc["data"].as<std::string>(), (MessageType)doc["message_type"].as<int>());
     }
 };

@@ -47,11 +47,11 @@ void loop()
 
     // Send the message
     udp.beginPacket(udpServer, udpPort);
-    String message = deviceMessage.toJson();
-    udp.print(message);
+    std::string message = deviceMessage.toJson();
+    udp.write(message.c_str(), message.length());
     udp.endPacket();
 
-    Serial.println("Sent message: " + message + " to " + udpServer + ":" + udpPort);
+    Serial.println("Sent message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
   }
 
   if (onBoarding && millis() - onboardingMillis > 5000) // Send onboarding message every 5 seconds
@@ -61,11 +61,11 @@ void loop()
 
     // Send the message
     udp.beginPacket(udpServer, udpPort);
-    String message = deviceMessage.toJson();
-    udp.print(message);
+    std::string message = deviceMessage.toJson();
+    udp.write(message.c_str(), message.length());
     udp.endPacket();
 
-    Serial.println("Sent onboarding message: " + message + " to " + udpServer + ":" + udpPort);
+    Serial.println("Sent onboarding message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
   }
 
   // Check for incoming messages

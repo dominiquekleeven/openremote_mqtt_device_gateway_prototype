@@ -1,26 +1,25 @@
 
 #include <ArduinoJson.h>
-#include <WString.h>
 
 #define PLUG_ASSET "PlugAsset"
 #define PRESENCE_SENSOR_ASSET "PresenceSensorAsset"
 
 struct BaseAsset
 {
-    String type;
-    String name;
-    String sn;
+    std::string type;
+    std::string name;
+    std::string sn;
 
     // constructor
-    BaseAsset(String name, String sn, String type)
+    BaseAsset(std::string name, std::string sn, std::string type)
     {
         this->type = type;
         this->sn = sn;
         this->name = name;
     }
 
-    // accept array of strings
-    String toJson(String extra)
+    // accept array of std::strings
+    std::string toJson(std::string extra)
     {
         DynamicJsonDocument doc(1024);
         doc["type"] = type;
@@ -43,7 +42,7 @@ struct BaseAsset
         serial["value"] = sn;
         serial["type"] = "text";
 
-        String output;
+        std::string output;
         serializeJson(doc, output);
         return output;
     }
@@ -51,11 +50,11 @@ struct BaseAsset
 
 struct PlugAsset : BaseAsset
 {
-    PlugAsset(String name, String sn, String type) : BaseAsset(name, sn, type)
+    PlugAsset(std::string name, std::string sn, std::string type) : BaseAsset(name, sn, type)
     {
     }
 
-    String toJson()
+    std::string toJson()
     {
         return BaseAsset::toJson("onOff");
     }
@@ -63,11 +62,11 @@ struct PlugAsset : BaseAsset
 
 struct PresenceSensorAsset : BaseAsset
 {
-    PresenceSensorAsset(String name, String sn, String type) : BaseAsset(name, sn, type)
+    PresenceSensorAsset(std::string name, std::string sn, std::string type) : BaseAsset(name, sn, type)
     {
     }
 
-    String toJson()
+    std::string toJson()
     {
 
         return BaseAsset::toJson("presence");

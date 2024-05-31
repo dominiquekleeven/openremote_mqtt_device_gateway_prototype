@@ -14,12 +14,12 @@ class OpenRemotePubSub
 {
 public:
     PubSubClient &client;
-    String clientId;
+    std::string clientId;
 
     /// @brief Constructor
     /// @param clientId Client ID for MQTT
     /// @param _client Reference to a PubSubClient object
-    OpenRemotePubSub(String clientId, PubSubClient &_client) : clientId(clientId), client(_client)
+    OpenRemotePubSub(std::string clientId, PubSubClient &_client) : clientId(clientId), client(_client)
     {
         if (client.getBufferSize() < 8192)
         {
@@ -28,7 +28,7 @@ public:
     }
 
     // Attribute operations
-    bool updateAttribute(String realm, String assetId, String attributeName, String attributeValue, bool subscribeToResponse = false)
+    bool updateAttribute(std::string realm, std::string assetId, std::string attributeName, std::string attributeValue, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -51,7 +51,7 @@ public:
         return client.publish(topic, payload);
     }
 
-    bool getAttribute(String realm, String assetId, String attributeName, bool subscribeToResponse = false)
+    bool getAttribute(std::string realm, std::string assetId, std::string attributeName, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -73,7 +73,7 @@ public:
     }
 
     // Asset operations
-    bool createAsset(String realm, String assetTemplate, String responseIdentifier, bool subscribeToResponse = false)
+    bool createAsset(std::string realm, std::string assetTemplate, std::string responseIdentifier, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -96,7 +96,7 @@ public:
         return client.publish(topic, payload);
     }
 
-    bool getAsset(String realm, String assetId, bool subscribeToResponse = false)
+    bool getAsset(std::string realm, std::string assetId, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -122,7 +122,7 @@ public:
     /// @param assetId
     /// @param attributeName
     /// @return SubscriptionResult
-    SubscriptionResult subscribeToAssetAttribute(String realm, String assetId, String attributeName)
+    SubscriptionResult subscribeToAssetAttribute(std::string realm, std::string assetId, std::string attributeName)
     {
         SubscriptionResult result;
 

@@ -15,6 +15,10 @@ const char *deviceName = "RelaySwitch";   // Name of the device
 const char *serialNumber = "Z02RL-ARKXF"; // Serial number of the device
 const char *deviceType = "PlugAsset";     // Type of the device
 
+// keepalivemillis
+unsigned long keepAliveMillis = 0;
+unsigned long keepAliveInterval = 10000; // Send keep alive message every 10 seconds
+
 void setup()
 {
   Serial.begin(115200);
@@ -45,11 +49,24 @@ void loop()
     DeviceMessage onboardMessage = DeviceMessage(deviceName, serialNumber, deviceType, "", MessageType::ONBOARD_MESSAGE);
     // Send the message
     udp.beginPacket(udpServer, udpPort);
-    String message = onboardMessage.toJson();
-    udp.print(message);
+    std::string message = onboardMessage.toJson();
+    udp.write(message.c_str(), message.length());
     udp.endPacket();
 
-    Serial.println("Sent onboarding message: " + message + " to " + udpServer + ":" + udpPort);
+    Serial.println("Sent onboarding message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
+  }
+
+  if (!onBoarding && millis() - keepAliveMillis > keepAliveInterval)
+  {
+    keepAliveMillis = millis();
+    DeviceMessage keepAliveMessage = DeviceMessage(deviceName, serialNumber, deviceType, "", MessageType::ALIVE_MESSAGE);
+    // Send the message
+    udp.beginPacket(udpServer, udpPort);
+    std::string message = keepAliveMessage.toJson();
+    udp.write(message.c_str(), message.length());
+    udp.endPacket();
+
+    Serial.println("Sent keep alive message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
   }
 
   // Check for incoming messages
