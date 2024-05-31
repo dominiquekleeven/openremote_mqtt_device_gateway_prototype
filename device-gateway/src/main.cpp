@@ -12,6 +12,7 @@
 
 using namespace std;
 
+// Simple versioning - used for resetting preferences
 #define REVISION 3
 
 // Global Variables
@@ -22,7 +23,7 @@ Preferences preferences;
 WiFiUDP udp;
 DeviceManager deviceManager(preferences);
 
-SemaphoreHandle_t xMutex;
+SemaphoreHandle_t mqttClientMutex;
 
 // Function Prototypes
 void mqttConnectionHandler(void *pvParameters);
@@ -36,7 +37,7 @@ void setup()
 {
   Serial.begin(115200);
 
-  delay(5000); // delay for 5 seconds
+  delay(5000); // delay for 3 seconds
 
   // WiFi
   WiFi.begin(ssid, password);
@@ -61,7 +62,7 @@ void setup()
   openRemotePubSub.client.setCallback(mqttCallbackHandler);
 
   // Mutex
-  xMutex = xSemaphoreCreateMutex();
+  mqttClientMutex = xSemaphoreCreateMutex();
 
   // Device Manager
   deviceManager.init();
@@ -84,7 +85,7 @@ void mqttConnectionHandler(void *pvParameters)
   while (true)
   {
     // grab the mutex
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
+    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       if (!openRemotePubSub.client.connected())
       {
@@ -101,7 +102,7 @@ void mqttConnectionHandler(void *pvParameters)
         }
       }
       // release the mutex
-      xSemaphoreGive(xMutex);
+      xSemaphoreGive(mqttClientMutex);
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
@@ -158,7 +159,7 @@ void udpHandler(void *pvParameters)
   while (true)
   {
     // grab mutex
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
+    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       if (openRemotePubSub.client.connected())
       {
@@ -185,7 +186,7 @@ void udpHandler(void *pvParameters)
         }
       }
       // release mutex
-      xSemaphoreGive(xMutex);
+      xSemaphoreGive(mqttClientMutex);
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
