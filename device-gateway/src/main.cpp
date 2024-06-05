@@ -44,7 +44,8 @@ void setup()
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(1000);
-    Serial.println("Connecting to WiFi, ssid: " + String(ssid) + +"...");
+    Serial.print("Connecting to WiFi, ssid: ");
+    Serial.println(ssid);
   }
   Serial.println("+ Connected to WiFi");
   wifiClient.setCACert(root_ca);
@@ -59,7 +60,6 @@ void setup()
 
   // MQTT
   openRemotePubSub.client.setServer(mqtt_host, mqtt_port);
-  openRemotePubSub.client.setBufferSize(8192);
   openRemotePubSub.client.setCallback(mqttCallbackHandler);
 
   // Mutex
@@ -67,10 +67,13 @@ void setup()
 
   // Device Manager
   deviceAssetManager.init();
+  Serial.println("+ Device manager initialized");
+  Serial.print("Asset count: ");
+  Serial.println(deviceAssetManager.assets.size());
 
   // Tasks - MQTT and UDP, adjust stack size if needed, ensure main thread is not starved though.
-  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 12480, NULL, 1, NULL);
-  xTaskCreate(udpHandler, "UDP Handler Task", 12480, NULL, 1, NULL);
+  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 25060, NULL, 1, NULL); // 25KB stack size
+  xTaskCreate(udpHandler, "UDP Handler Task", 12480, NULL, 1, NULL);                // 12KB stack size
 }
 
 // Core Loop
@@ -89,10 +92,14 @@ void mqttConnectionHandler(void *pvParameters)
     {
       if (!openRemotePubSub.client.connected())
       {
-        Serial.println("Connecting to MQTT, host: " + String(mqtt_host) + ", port: " + String(mqtt_port) + ", client id: " + String(mqtt_client_id));
+        Serial.print("Connecting to MQTT, host: ");
+        Serial.print(mqtt_host);
+        Serial.print(", port: ");
+        Serial.println(mqtt_port);
+
         if (openRemotePubSub.client.connect(mqtt_client_id, mqtt_user, mqtt_pas))
         {
-          Serial.println("+ MQTT Connected");
+          Serial.println("+ MQTT connected");
 
           // Update the gateway status to online (connected)
           openRemotePubSub.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
@@ -110,13 +117,14 @@ void mqttConnectionHandler(void *pvParameters)
             DeviceAsset asset = deviceAssetManager.assets[i];
             if (openRemotePubSub.createAsset("master", asset.managerJson, asset.sn.c_str(), false))
             {
-              Serial.println("+ Sent asset data to OpenRemote, sn: " + String(asset.sn.c_str()));
+              Serial.print("+ Sent asset data to OpenRemote, sn: ");
+              Serial.println(asset.sn.c_str());
             }
           }
         }
         else
         {
-          Serial.println("MQTT Connection Failed");
+          Serial.println("! MQTT connection failed");
         }
       }
       xSemaphoreGive(mqttClientMutex);
@@ -133,22 +141,22 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   // Handle response topics
   if (strstr(topic, "response") != NULL)
   {
-    Serial.println("+ Response Received");
+    Serial.println("Request response received");
     // unsubscribe from response topics, part of the request-response pattern
     openRemotePubSub.client.unsubscribe(topic);
     DynamicJsonDocument doc(8096);
     deserializeJson(doc, payload, length);
 
     // Handle asset events
-    bool isAssetEvent = doc["eventType"].as<String>() == "asset";
-    bool isCreationEvent = doc["cause"].as<String>() == "CREATE";
+    bool isAssetEvent = doc["eventType"].as<std::string>() == "asset";
+    bool isCreationEvent = doc["cause"].as<std::string>() == "CREATE";
     std::string asset = doc["asset"].as<std::string>();
 
     if (isAssetEvent && isCreationEvent)
     {
-      Serial.println("+ Asset Created: " + String(asset.c_str()));
       DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
-      Serial.println("+ Device onboarded: " + String(deviceAsset.sn.c_str()));
+      Serial.print("+ Device onboarded, sn: ");
+      Serial.println(deviceAsset.sn.c_str());
       deviceAssetManager.addDeviceAsset(deviceAsset);
     }
   }
@@ -162,11 +170,12 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       deserializeJson(doc, payload, length);
       std::string event = doc.as<std::string>();
 
-      Serial.println("+ Pending Gateway Event Received - " + String(event.c_str()));
+      Serial.println("Pending gateway event received:");
+      Serial.println(event.c_str());
+
       if (openRemotePubSub.acknowledgeGatewayEvent(topic))
       {
-
-        Serial.println("+ Acknowledgement Sent");
+        Serial.println("+ Pending event acknowledged");
       }
       xSemaphoreGive(mqttClientMutex);
     }
@@ -235,7 +244,8 @@ void udpHandleAliveMessage(DeviceMessage deviceMessage)
 
 void udpHandleDataMessage(DeviceMessage deviceMessage)
 {
-  Serial.println("Data received, device: " + String(deviceMessage.toJson().c_str()));
+  Serial.print("Device data received - data: ");
+  Serial.println(deviceMessage.data.c_str());
 
   // Request onboarding if device is not onboarded
   if (!deviceAssetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
@@ -257,7 +267,6 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
     {
       std::string assetId = deviceAssetManager.getDeviceAssetId(deviceMessage.device_sn);
-      // we get json data from the device, we can parse it and update the attributes
       DynamicJsonDocument doc(8096);
       deserializeJson(doc, deviceMessage.data);
       openRemotePubSub.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
@@ -268,25 +277,28 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
 
 void udpHandleOnboardMessage(DeviceMessage deviceMessage)
 {
-  Serial.println("Onboard Message Received, device: " + String(deviceMessage.toJson().c_str()));
-
   // Check if device is already onboarded in our local asset manager
   if (deviceAssetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
   {
-    Serial.println("+ Device is onboarded");
+    Serial.println("Device is onboarded");
     // Send ONBOARDOK back to udp
     udp.beginPacket(udp.remoteIP(), udp.remotePort());
     udp.write((const uint8_t *)ONBOARD_OK, 10);
     udp.endPacket();
 
     deviceAssetManager.setConnection(deviceMessage.device_sn.c_str(), udp.remoteIP(), udp.remotePort());
-    Serial.println("+ Sent ONBOARD_OK to host: " + udp.remoteIP().toString() + " port: " + udp.remotePort());
+
+    Serial.print("+ Sent ONBOARD_OK to host: ");
+    Serial.print(udp.remoteIP());
+    Serial.print(", port: ");
+    Serial.println(udp.remotePort());
+
     deviceAssetManager.removePendingOnboarding(deviceMessage.device_sn.c_str()); // remove from pending onboarding - we are done.
   }
   // Check if device is pending onboarding, prevent queuing multiple onboarding requests
   else if (deviceAssetManager.isOnboardingPending(deviceMessage.device_sn.c_str()))
   {
-    Serial.println("<> Device is pending onboarding");
+    Serial.println("Device is pending onboarding");
   }
   // Start onboarding the device.
   else
@@ -313,7 +325,6 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       EnvironmentSensorAsset asset = EnvironmentSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      Serial.println("Asset: " + (String)json.c_str());
       if (openRemotePubSub.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
       {
         Serial.println("+ Sent asset create request");

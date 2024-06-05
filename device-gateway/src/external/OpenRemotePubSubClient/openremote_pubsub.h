@@ -21,9 +21,9 @@ public:
     /// @param _client Reference to a PubSubClient object
     OpenRemotePubSub(std::string clientId, PubSubClient &_client) : clientId(clientId), client(_client)
     {
-        if (client.getBufferSize() < 8192)
+        if (client.getBufferSize() < 16384)
         {
-            client.setBufferSize(8192);
+            client.setBufferSize(16384); // Increase buffer size to 16KB, especially important because of SSL/CA cert
         }
     }
 

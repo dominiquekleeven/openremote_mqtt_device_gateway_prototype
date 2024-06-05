@@ -29,10 +29,7 @@ public:
     /// @brief Initialize the device manager
     void init()
     {
-        Serial.println("+ Device Asset Manager initialized");
-
         uint count = preferences.getUInt("count", 0);
-        Serial.println("Asset count: " + String(count));
 
         if (count == 0)
         {
@@ -46,8 +43,7 @@ public:
             if (assetJson != "")
             {
                 DeviceAsset asset = DeviceAsset::fromJson(assetJson.c_str());
-                Serial.println("Asset: " + (String)asset.toString().c_str());
-                assets.push_back(asset);
+                assets.push_back(std::move(asset));
             }
         }
     }
@@ -92,14 +88,8 @@ public:
     /// @return bool
     bool isDeviceOnboarded(std::string deviceSerial)
     {
-        for (int i = 0; i < assets.size(); i++)
-        {
-            if (assets[i].sn.c_str() == deviceSerial)
-            {
-                return true;
-            }
-        }
-        return false;
+        return std::any_of(assets.begin(), assets.end(), [&deviceSerial](const DeviceAsset &asset)
+                           { return asset.sn == deviceSerial; });
     }
 
     /// @brief Add a device asset to the device manager,
@@ -122,9 +112,10 @@ public:
         preferences.putUInt("count", assets.size());
 
         uint count = preferences.getUInt("count", 0);
-        Serial.println("Asset count: " + String(count));
     }
 
+    /// @brief Handle an attribute event from the OpenRemote platform, updates the local device asset representation respectively
+    /// @param attributeEvent JSON string, containing the attribute event
     void handleManagerAttributeEvent(std::string attributeEvent)
     {
         //{"eventType":"attribute","ref":{"id":"27Nz70ewisZB4CdPVX1Gp2","name":"notes"},"value":null,"timestamp":1717614718858,"deleted":false,"realm":"master"}
