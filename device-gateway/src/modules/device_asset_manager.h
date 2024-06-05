@@ -11,7 +11,7 @@
 /// This class is responsible for managing devices and their assets
 /// It keeps track of devices that are pending onboarding, devices that are onboarded and their assets
 /// It also stores the device assets in the ESP32's preferences (non-volatile memory, key-value store)
-class DeviceManager
+class DeviceAssetManager
 {
 
 public:
@@ -22,17 +22,17 @@ public:
     /// @brief Constructor
     /// @param clientId Client ID for MQTT
     /// @param _client Reference to a PubSubClient object
-    DeviceManager(Preferences &preferences) : preferences(preferences)
+    DeviceAssetManager(Preferences &preferences) : preferences(preferences)
     {
     }
 
     /// @brief Initialize the device manager
     void init()
     {
-        Serial.println("+ Device Manager initialized");
+        Serial.println("+ Device Asset Manager initialized");
 
         uint count = preferences.getUInt("count", 0);
-        Serial.println("Device count: " + String(count));
+        Serial.println("Asset count: " + String(count));
 
         if (count == 0)
         {
@@ -43,10 +43,10 @@ public:
         {
             std::string id = std::to_string(i);
             std::string assetJson = std::string(preferences.getString(id.c_str(), "").c_str());
-            Serial.println(assetJson.c_str());
             if (assetJson != "")
             {
                 DeviceAsset asset = DeviceAsset::fromJson(assetJson.c_str());
+                Serial.println("Asset: " + (String)asset.toString().c_str());
                 assets.push_back(asset);
             }
         }
@@ -118,11 +118,16 @@ public:
         // get the current count of assets
         uint id = preferences.getUInt("count", 0);
         // increment the count, id = count
-        preferences.putString(std::to_string(id).c_str(), asset.toJson().c_str());
+        preferences.putString(std::to_string(id).c_str(), asset.managerJson.c_str());
         preferences.putUInt("count", assets.size());
 
         uint count = preferences.getUInt("count", 0);
-        Serial.println("Device count: " + String(count));
+        Serial.println("Asset count: " + String(count));
+    }
+
+    void handleManagerAttributeEvent(std::string attributeEvent)
+    {
+        //{"eventType":"attribute","ref":{"id":"27Nz70ewisZB4CdPVX1Gp2","name":"notes"},"value":null,"timestamp":1717614718858,"deleted":false,"realm":"master"}
     }
 
     /// @brief Get the device asset ID by device serial number

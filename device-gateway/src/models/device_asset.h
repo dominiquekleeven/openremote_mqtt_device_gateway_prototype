@@ -6,21 +6,12 @@ struct DeviceAsset
     std::string sn;
     std::string type;
 
+    // manager representation (we are the source of truth for this data, so we store the json representation here)
+    std::string managerJson;
+
     // optional ones
     IPAddress address = IPAddress();
     uint port = 0;
-
-    std::string toJson()
-    {
-        DynamicJsonDocument doc(1024);
-        doc["id"] = id;
-        doc["type"] = type;
-        doc["attributes"]["sn"]["value"] = sn;
-
-        std::string output;
-        serializeJson(doc, output);
-        return output;
-    }
 
     std::string toString()
     {
@@ -29,12 +20,13 @@ struct DeviceAsset
 
     static DeviceAsset fromJson(std::string json)
     {
-        DynamicJsonDocument doc(1024);
+        DynamicJsonDocument doc(8096);
         deserializeJson(doc, json);
         DeviceAsset asset;
         asset.id = doc["id"].as<std::string>();
         asset.type = doc["type"].as<std::string>();
         asset.sn = doc["attributes"]["sn"]["value"].as<std::string>();
+        asset.managerJson = json;
         return asset;
     }
 };

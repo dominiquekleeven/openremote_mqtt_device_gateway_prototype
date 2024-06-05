@@ -3,6 +3,7 @@
 
 #define PLUG_ASSET "PlugAsset"
 #define PRESENCE_SENSOR_ASSET "PresenceSensorAsset"
+#define ENVIRONMENT_SENSOR_ASSET "EnvironmentSensorAsset"
 
 struct BaseAsset
 {
@@ -19,17 +20,19 @@ struct BaseAsset
     }
 
     // accept array of std::strings
-    std::string toJson(std::string extra)
+    std::string toJson(std::vector<std::string> extras)
     {
-        DynamicJsonDocument doc(1024);
+        DynamicJsonDocument doc(8096);
         doc["type"] = type;
         doc["name"] = name;
 
         JsonObject attributes = doc.createNestedObject("attributes");
-
-        if (extra != "")
+        if (extras.size() > 0)
         {
-            attributes.createNestedObject(extra);
+            for (int i = 0; i < extras.size(); i++)
+            {
+                JsonObject extra = attributes.createNestedObject(extras[i]);
+            }
         }
 
         JsonObject notes = attributes.createNestedObject("notes");
@@ -56,7 +59,8 @@ struct PlugAsset : BaseAsset
 
     std::string toJson()
     {
-        return BaseAsset::toJson("onOff");
+        std::vector<std::string> extras = {"onOff"};
+        return BaseAsset::toJson(extras);
     }
 };
 
@@ -68,7 +72,20 @@ struct PresenceSensorAsset : BaseAsset
 
     std::string toJson()
     {
+        std::vector<std::string> extras = {"presence"};
+        return BaseAsset::toJson(extras);
+    }
+};
 
-        return BaseAsset::toJson("presence");
+struct EnvironmentSensorAsset : BaseAsset
+{
+    EnvironmentSensorAsset(std::string name, std::string sn, std::string type) : BaseAsset(name, sn, type)
+    {
+    }
+
+    std::string toJson()
+    {
+        std::vector<std::string> extras = {"temperature", "relativeHumidity", "NO2Level", "ozoneLevel", "particlesPM1", "particlesPM10", "particlesPM2_5"};
+        return BaseAsset::toJson(extras);
     }
 };

@@ -4,21 +4,24 @@
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
 #include "device_message.h"
+#include <DHT.h>
 
-int PIR_PIN = D1;
+int DHT_PIN = D1;
+#define DHT_TYPE DHT22
+DHT dht(DHT_PIN, DHT_TYPE);
+
 WiFiUDP udp;
 int lastMotionState = LOW; // last PIR state
 
 bool onBoarding = true; // Always send onboarding message on startup
 
-const char *deviceName = "MotionSensor";        // Name of the device
-const char *serialNumber = "KH9NH-BKRFF";       // Serial number of the device
-const char *deviceType = "PresenceSensorAsset"; // Type of the device
+const char *deviceName = "Humidity & Temperature Sensor"; // Name of the device
+const char *serialNumber = "PB10A-ORLZ1";                 // Serial number of the device
+const char *deviceType = "EnvironmentSensorAsset";        // Type of the device
 
 void setup()
 {
   Serial.begin(115200);
-  pinMode(PIR_PIN, INPUT);
 
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
@@ -29,33 +32,39 @@ void setup()
   Serial.println("Connected to WiFi");
 
   udp.begin(udpPort);
+  dht.begin();
   Serial.println("UDP connection started");
 }
 
 // onboarding millis
 unsigned long onboardingMillis = 0;
+unsigned long measurementMillis = 0;
+unsigned long measurementInterval = 10000; // 10s
+float lastTemperatureMeasurement = 0;
+float lastHumidityMeasurement = 0;
 
 void loop()
 {
-  int motionDetected = digitalRead(PIR_PIN);
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
 
-  if (motionDetected != lastMotionState) // Only send message if motion state has changed and not onboarding
+  if (!onBoarding && millis() - measurementMillis > measurementInterval)
   {
-    lastMotionState = motionDetected;
-    Serial.println("Motion detected: " + String(motionDetected == HIGH ? "1" : "0"));
+    lastHumidityMeasurement = humidity;
+    lastTemperatureMeasurement = temperature;
+    measurementMillis = millis();
 
-    if (!onBoarding)
-    {
-      DeviceMessage deviceMessage = DeviceMessage(deviceName, serialNumber, deviceType, motionDetected == HIGH ? "1" : "0", MessageType::DATA_MESSAGE);
+    // Create a message
+    std::string data = "{\"temperature\":" + std::to_string(lastTemperatureMeasurement) + ",\"relativeHumidity\":" + std::to_string(lastHumidityMeasurement) + "}";
+    DeviceMessage deviceMessage = DeviceMessage(deviceName, serialNumber, deviceType, data, MessageType::DATA_MESSAGE);
 
-      // Send the message
-      udp.beginPacket(udpServer, udpPort);
-      std::string message = deviceMessage.toJson();
-      udp.write(message.c_str(), message.length());
-      udp.endPacket();
+    // Send the message
+    udp.beginPacket(udpServer, udpPort);
+    std::string message = deviceMessage.toJson();
+    udp.write(message.c_str(), message.length());
+    udp.endPacket();
 
-      Serial.println("Sent message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
-    }
+    Serial.println("Sent message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
   }
 
   if (onBoarding && millis() - onboardingMillis > 5000) // Send onboarding message every 5 seconds

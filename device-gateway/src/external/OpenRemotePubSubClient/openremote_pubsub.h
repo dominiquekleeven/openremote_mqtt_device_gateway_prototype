@@ -117,12 +117,24 @@ public:
         return client.publish(topic, ""); // Requests don't require a payload
     }
 
+    bool acknowledgeGatewayEvent(std::string topic)
+    {
+        if (!client.connected())
+        {
+            return false;
+        }
+        char newTopic[256];
+        snprintf(newTopic, sizeof(newTopic), "%s/ack", topic.c_str());
+        Serial.println(newTopic);
+        return client.publish(newTopic, "");
+    }
+
     /// @brief Subscribe to a specific asset attribute on OpenRemote
     /// @param realm
     /// @param assetId
     /// @param attributeName
     /// @return SubscriptionResult
-    SubscriptionResult subscribeToAssetAttribute(std::string realm, std::string assetId, std::string attributeName)
+    SubscriptionResult subscribeToPendingGatewayEvents(std::string realm)
     {
         SubscriptionResult result;
 
@@ -132,7 +144,7 @@ public:
             return result;
         }
 
-        snprintf(result.topic, sizeof(result.topic), "%s/%s/events/assets/%s/attributes/%s", realm.c_str(), clientId.c_str(), assetId.c_str(), attributeName.c_str());
+        snprintf(result.topic, sizeof(result.topic), "%s/%s/gateway/events/pending/+", realm.c_str(), clientId.c_str());
         client.subscribe(result.topic) ? result.success = true : result.success = false;
         return result;
     }
