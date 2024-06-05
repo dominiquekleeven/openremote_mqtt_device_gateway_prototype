@@ -68,9 +68,9 @@ void setup()
   // Device Manager
   deviceAssetManager.init();
 
-  // Tasks - ADJUST HEAP SIZE BASED ON AVAILABLE MEMORY (e.g. ESP32-wroom-32d has 520KB heap size)
-  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 20480, NULL, 1, NULL); // 20KB
-  xTaskCreate(udpHandler, "UDP Handler Task", 20480, NULL, 1, NULL);                // 20KB
+  // Tasks - MQTT and UDP, adjust stack size if needed, ensure main thread is not starved though.
+  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 12480, NULL, 1, NULL);
+  xTaskCreate(udpHandler, "UDP Handler Task", 12480, NULL, 1, NULL);
 }
 
 // Core Loop
