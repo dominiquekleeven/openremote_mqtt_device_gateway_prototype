@@ -72,7 +72,7 @@ void setup()
   Serial.println(deviceAssetManager.assets.size());
 
   // Tasks - MQTT and UDP, adjust stack size if needed, ensure main thread is not starved though.
-  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 25060, NULL, 1, NULL); // 25KB stack size
+  xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 34816, NULL, 1, NULL); // 34KB stack size, recommended with SSL
   xTaskCreate(udpHandler, "UDP Handler Task", 12480, NULL, 1, NULL);                // 12KB stack size
 }
 
