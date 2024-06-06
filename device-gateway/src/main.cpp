@@ -48,11 +48,13 @@ void setup()
     Serial.println(ssid);
   }
   Serial.println("+ Connected to WiFi");
-  wifiClient.setCACert(root_ca);
 
   // local address
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+
+  // set the CA cert for the WiFi client
+  wifiClient.setCACert(root_ca);
 
   // Preferences
   preferences.begin("asset-manager" + REVISION, false);
@@ -76,11 +78,22 @@ void setup()
   xTaskCreate(udpHandler, "UDP Handler Task", 12480, NULL, 1, NULL);                // 12KB stack size
 }
 
+unsigned long lastReconnectAttempt = 0;
+unsigned long lastReconnectAttemptInterval = 5000;
+
 // Core Loop
 void loop()
 {
-  delay(10);
+  // WiFi reconnect - if disconnected
+  if (WiFi.status() != WL_CONNECTED && (millis() - lastReconnectAttempt) > lastReconnectAttemptInterval)
+  {
+    Serial.println("! WiFi disconnected");
+    WiFi.reconnect();
+    lastReconnectAttempt = millis();
+  }
+
   openRemotePubSub.client.loop();
+  delay(10);
 }
 
 // MQTT Task
@@ -90,7 +103,8 @@ void mqttConnectionHandler(void *pvParameters)
   {
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
-      if (!openRemotePubSub.client.connected())
+      // Reconnect to MQTT if disconnected
+      if (!openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
       {
         Serial.print("Connecting to MQTT, host: ");
         Serial.print(mqtt_host);
@@ -127,6 +141,14 @@ void mqttConnectionHandler(void *pvParameters)
           Serial.println("! MQTT connection failed");
         }
       }
+
+      // Update the gateway status to online (connected) - constant update
+      // The broker will disconnect us if we don't send data for a while.
+      if (openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
+      {
+        openRemotePubSub.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
+      }
+
       xSemaphoreGive(mqttClientMutex);
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -189,7 +211,8 @@ void udpHandler(void *pvParameters)
   {
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
-      if (openRemotePubSub.client.connected())
+      // Ensure we are connected to OpenRemote and WiFi
+      if (openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
       {
         int packetSize = udp.parsePacket();
         if (packetSize)

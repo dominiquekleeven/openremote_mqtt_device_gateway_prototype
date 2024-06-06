@@ -34,28 +34,32 @@ void setup()
 
 // onboarding millis
 unsigned long onboardingMillis = 0;
+unsigned long motionMillis = 0;
 
 void loop()
 {
   int motionDetected = digitalRead(PIR_PIN);
 
-  if (motionDetected != lastMotionState) // Only send message if motion state has changed and not onboarding
+  if (motionDetected != lastMotionState)
   {
     lastMotionState = motionDetected;
-    Serial.println("Motion detected: " + String(motionDetected == HIGH ? "1" : "0"));
+    motionMillis += 1000; // Send the message instantly
+  }
 
-    if (!onBoarding)
-    {
-      DeviceMessage deviceMessage = DeviceMessage(deviceName, serialNumber, deviceType, motionDetected == HIGH ? "1" : "0", MessageType::DATA_MESSAGE);
+  // Update instantly if motion detected, otherwise update every second
+  if (!onBoarding && millis() - motionMillis > 1000)
+  {
 
-      // Send the message
-      udp.beginPacket(udpServer, udpPort);
-      std::string message = deviceMessage.toJson();
-      udp.write(message.c_str(), message.length());
-      udp.endPacket();
+    motionMillis = millis();
+    DeviceMessage deviceMessage = DeviceMessage(deviceName, serialNumber, deviceType, motionDetected == HIGH ? "1" : "0", MessageType::DATA_MESSAGE);
 
-      Serial.println("Sent message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
-    }
+    // Send the message
+    udp.beginPacket(udpServer, udpPort);
+    std::string message = deviceMessage.toJson();
+    udp.write(message.c_str(), message.length());
+    udp.endPacket();
+
+    Serial.println("Sent message: " + String(message.c_str()) + " to " + udpServer + ":" + udpPort);
   }
 
   if (onBoarding && millis() - onboardingMillis > 5000) // Send onboarding message every 5 seconds
