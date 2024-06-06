@@ -22,7 +22,7 @@ struct BaseAsset
     // accept array of std::strings
     std::string toJson(std::vector<std::string> extras)
     {
-        DynamicJsonDocument doc(8096);
+        DynamicJsonDocument doc(4096);
         doc["type"] = type;
         doc["name"] = name;
 

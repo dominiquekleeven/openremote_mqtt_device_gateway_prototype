@@ -33,6 +33,9 @@ void udpHandleDataMessage(DeviceMessage deviceMessage);
 void udpHandleOnboardMessage(DeviceMessage deviceMessage);
 void udpHandleAliveMessage(DeviceMessage deviceMessage);
 
+unsigned int wifiConnectionAttempts = 0;
+unsigned int wifiConnectionAttemptsMax = 10;
+
 void setup()
 {
   Serial.begin(115200);
@@ -46,7 +49,16 @@ void setup()
     delay(1000);
     Serial.print("Connecting to WiFi, ssid: ");
     Serial.println(ssid);
+    wifiConnectionAttempts++;
+
+    // Prevent getting stuck in a connection loop, restart if we can't connect.
+    if (wifiConnectionAttempts > wifiConnectionAttemptsMax)
+    {
+      Serial.println("! WiFi connection failed");
+      ESP.restart();
+    }
   }
+  wifiConnectionAttempts = 0;
   Serial.println("+ Connected to WiFi");
 
   // local address
@@ -80,6 +92,8 @@ void setup()
 
 unsigned long lastReconnectAttempt = 0;
 unsigned long lastReconnectAttemptInterval = 5000;
+unsigned long lastSystemStatusUpdate = 0;
+unsigned long lastSystemStatusUpdateInterval = 10000;
 
 // Core Loop
 void loop()
@@ -90,6 +104,14 @@ void loop()
     Serial.println("! WiFi disconnected");
     WiFi.reconnect();
     lastReconnectAttempt = millis();
+  }
+
+  // Print system info, e.g. free stack space
+  if ((millis() - lastSystemStatusUpdate) > lastSystemStatusUpdateInterval)
+  {
+    Serial.print("[i] Free heap space: ");
+    Serial.println(ESP.getFreeHeap());
+    lastSystemStatusUpdate = millis();
   }
 
   openRemotePubSub.client.loop();
@@ -162,23 +184,27 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   // Handle response topics
   if (strstr(topic, "response") != NULL)
   {
-    Serial.println("Request response received");
-    // unsubscribe from response topics, part of the request-response pattern
-    openRemotePubSub.client.unsubscribe(topic);
-    DynamicJsonDocument doc(8096);
-    deserializeJson(doc, payload, length);
-
-    // Handle asset events
-    bool isAssetEvent = doc["eventType"].as<std::string>() == "asset";
-    bool isCreationEvent = doc["cause"].as<std::string>() == "CREATE";
-    std::string asset = doc["asset"].as<std::string>();
-
-    if (isAssetEvent && isCreationEvent)
+    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
-      DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
-      Serial.print("+ Device onboarded, sn: ");
-      Serial.println(deviceAsset.sn.c_str());
-      deviceAssetManager.addDeviceAsset(deviceAsset);
+      Serial.println("Request response received");
+      // unsubscribe from response topics, part of the request-response pattern
+      openRemotePubSub.client.unsubscribe(topic);
+      DynamicJsonDocument doc(4096);
+      deserializeJson(doc, payload, length);
+
+      // Handle asset events
+      bool isAssetEvent = doc["eventType"].as<std::string>() == "asset";
+      bool isCreationEvent = doc["cause"].as<std::string>() == "CREATE";
+      std::string asset = doc["asset"].as<std::string>();
+
+      if (isAssetEvent && isCreationEvent)
+      {
+        DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
+        Serial.print("+ Device onboarded, sn: ");
+        Serial.println(deviceAsset.sn.c_str());
+        deviceAssetManager.addDeviceAsset(deviceAsset);
+      }
+      xSemaphoreGive(mqttClientMutex);
     }
   }
 
@@ -187,7 +213,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   {
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
-      DynamicJsonDocument doc(8096);
+      DynamicJsonDocument doc(1024);
       deserializeJson(doc, payload, length);
       std::string event = doc.as<std::string>();
 
@@ -289,7 +315,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
     {
       std::string assetId = deviceAssetManager.getDeviceAssetId(deviceMessage.device_sn);
-      DynamicJsonDocument doc(8096);
+      DynamicJsonDocument doc(1024);
       deserializeJson(doc, deviceMessage.data);
       openRemotePubSub.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
       openRemotePubSub.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
