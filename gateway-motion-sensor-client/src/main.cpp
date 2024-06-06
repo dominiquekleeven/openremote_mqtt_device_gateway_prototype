@@ -35,6 +35,7 @@ void setup()
 // onboarding millis
 unsigned long onboardingMillis = 0;
 unsigned long motionMillis = 0;
+unsigned long motionInterval = 10000;
 
 void loop()
 {
@@ -43,11 +44,11 @@ void loop()
   if (motionDetected != lastMotionState)
   {
     lastMotionState = motionDetected;
-    motionMillis += 1000; // Send the message instantly
+    motionMillis += motionInterval; // Send the message instantly
   }
 
   // Update instantly if motion detected, otherwise update every second
-  if (!onBoarding && millis() - motionMillis > 1000)
+  if (!onBoarding && millis() - motionMillis > motionInterval)
   {
 
     motionMillis = millis();
