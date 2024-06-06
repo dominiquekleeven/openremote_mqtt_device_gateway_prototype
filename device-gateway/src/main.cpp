@@ -142,8 +142,7 @@ void mqttConnectionHandler(void *pvParameters)
         }
       }
 
-      // Update the gateway status to online (connected) - constant update
-      // The broker will disconnect us if we don't send data for a while.
+      // Update the gateway status to online (connected) - constant update, ensuring the status is always correct.
       if (openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
       {
         openRemotePubSub.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
