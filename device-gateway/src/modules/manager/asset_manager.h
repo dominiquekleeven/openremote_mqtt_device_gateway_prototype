@@ -4,14 +4,16 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include "models/device_asset.h"
+#include "device_asset.h"
 #include <Preferences.h>
+
+// SUPPORTED TYPES: PlugAsset, PresenceSensorAsset, EnvironmentSensorAsset
 
 /// @brief Device Manager class
 /// This class is responsible for managing devices and their assets
 /// It keeps track of devices that are pending onboarding, devices that are onboarded and their assets
 /// It also stores the device assets in the ESP32's preferences (non-volatile memory, key-value store)
-class DeviceAssetManager
+class AssetManager
 {
 
 public:
@@ -22,7 +24,7 @@ public:
     /// @brief Constructor
     /// @param clientId Client ID for MQTT
     /// @param _client Reference to a PubSubClient object
-    DeviceAssetManager(Preferences &preferences) : preferences(preferences)
+    AssetManager(Preferences &preferences) : preferences(preferences)
     {
     }
 
@@ -146,6 +148,19 @@ public:
             }
         }
         return DeviceAsset();
+    }
+
+    bool deleteDeviceAsset(std::string deviceSerial)
+    {
+        for (int i = 0; i < assets.size(); i++)
+        {
+            if (assets[i].sn.c_str() == deviceSerial)
+            {
+                assets.erase(assets.begin() + i);
+                return true;
+            }
+        }
+        return false;
     }
 
     /// @brief Get a device asset by ID

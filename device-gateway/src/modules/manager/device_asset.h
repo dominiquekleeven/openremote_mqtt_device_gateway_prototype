@@ -6,7 +6,7 @@ struct DeviceAsset
     std::string sn;
     std::string type;
 
-    // manager representation (we are the source of truth for this data, so we store the json representation here)
+    // openremote manager representation (we are the source of truth for this data, so we store the json representation here)
     std::string managerJson;
 
     // optional ones

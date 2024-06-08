@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>OpenRemote Edge - Gateway Prototype</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+    <main>
+        <div class="intro">
+            <h1>OpenRemote Edge</h1>
+            <h3>Gateway Prototype</h3>
+        </div>
+        <hr />
+        <div class="assets">
+            <h3>Assets <span id="assetCount">(0)</span></h3>
+            <table>
+                <tr>
+                    <th>Asset details</th>
+                    <th>S/N</th>
+                    <th></th>
+                </tr>
+            </table>
+        </div>
+    </main>
+</body>
+
+<script>
+    function fetchAssets() {
+        var assets = [];
+        fetch('/manager/assets')
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.assets);
+                assets = data.assets;
+                if (assets.length === 0) {
+                    var table = document.querySelector('table');
+                    var row = table.insertRow(1);
+                    var cell = row.insertCell(0);
+                    cell.colSpan = 4;
+                    cell.style.padding = '20px';
+                    cell.innerHTML = 'No assets found';
+                    return;
+                }
+
+                displayAssets(assets)
+            })
+            .catch(error => {
+                if (assets.length === 0) {
+                    displayTableMessage('Failed to fetch assets');
+                    console.warn("Failed to fetch assets")
+                    return;
+                }
+            });
+    }
+
+    function displayTableMessage(message) {
+        var table = document.querySelector('table');
+        var row = table.insertRow(1);
+        var cell = row.insertCell(0);
+        cell.colSpan = 4;
+        cell.style.padding = '20px';
+        cell.innerHTML = message;
+        return;
+    }
+
+    function displayAssets(assets) {
+        assets.forEach(asset => {
+            var table = document.querySelector('table');
+            var row = table.insertRow(1);
+            var cell1 = row.insertCell(0);
+            var cell2 = row.insertCell(1);
+            cell1.innerHTML = '<div class="asset"><span class="type">' + asset.type + ' </span> ' + '<span class="id">' + asset.id + '</span></div>';
+            cell2.innerHTML = '<span class="serial">' + asset.sn + '</span>';
+            var cell3 = row.insertCell(2);
+            var deleteButton = document.createElement('button');
+            deleteButton.innerHTML = 'DEL';
+            deleteButton.onclick = function () {
+                deleteAsset(asset.id);
+            }
+            cell3.appendChild(deleteButton);
+            var assetCount = document.getElementById('assetCount');
+            assetCount.innerHTML = '(' + assets.length + ')';
+        });
+    }
+
+
+
+    function deleteAsset(assetId) {
+        var confirmation = confirm('Are you sure you want to delete asset with ID: ' + assetId + '?');
+        if (confirmation) {
+            console.log('Deleting asset with ID: ' + assetId);
+            fetch('manager/assets/' + assetId, {
+                method: 'DELETE'
+            }).then(response => response.json()).then(data => {
+                console.log('Success:', data);
+            }).catch((error) => {
+                console.error('Error:', error);
+            });
+            location.reload();
+        }
+    }
+
+    fetchAssets();
+</script>
+
+</html>

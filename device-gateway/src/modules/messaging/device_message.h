@@ -6,10 +6,14 @@
 #define ONBOARD_FAIL "ONBOARD_FAIL"
 #define ONBOARD_REQ "ONBOARD_REQ"
 
-// action messages
+// action messages - these are sent to devices to control them
 #define ACTION_ON "ACTION_ON"
 #define ACTION_OFF "ACTION_OFF"
 
+// message types
+// ONBOARD_MESSAGE: message sent to a device to onboard it
+// DATA_MESSAGE: received data from a device
+// ALIVE_MESSAGE: received alive message from a device, ping message
 enum MessageType
 {
     ONBOARD_MESSAGE,
@@ -17,6 +21,11 @@ enum MessageType
     ALIVE_MESSAGE
 };
 
+// Generic messaging structure for device based communication
+// device_name: name of the device
+// device_sn: serial number of the device
+// device_type: type of the device
+// data: data to be sent, can be any string data
 struct DeviceMessage
 {
     std::string device_name;

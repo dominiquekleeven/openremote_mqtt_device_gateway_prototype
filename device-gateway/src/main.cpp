@@ -1,14 +1,15 @@
 #include "config/secrets.h"
 #include "external/OpenRemotePubSubClient/openremote_pubsub.h"
-
+#include <ESPAsyncWebServer.h>
+#include <SPIFFS.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
-#include "models/device_message.h"
-#include "modules/device_asset_manager.h"
-#include "models/asset_templates.h"
+#include "modules/messaging/device_message.h"
+#include "modules/manager/asset_manager.h"
+#include "modules/manager/asset_templates.h"
 
 using namespace std;
 
@@ -17,13 +18,15 @@ using namespace std;
 
 // Global Variables
 WiFiClientSecure wifiClient;
-PubSubClient mqttClient(wifiClient); // passed to OpenRemotePubSub - which wraps PubSubClient
-OpenRemotePubSub openRemotePubSub(mqtt_client_id, mqttClient);
+PubSubClient mqttClient(wifiClient); // passed to openRemoteMqtt - which wraps PubSubClient
+OpenRemotePubSub openRemoteMqtt(mqtt_client_id, mqttClient);
 Preferences preferences;
 WiFiUDP udp;
-DeviceAssetManager deviceAssetManager(preferences);
+AsyncWebServer server(80);
+AssetManager assetManager(preferences);
 
 SemaphoreHandle_t mqttClientMutex;
+SemaphoreHandle_t managerMutex;
 
 // Function Prototypes
 void mqttConnectionHandler(void *pvParameters);
@@ -32,6 +35,7 @@ void udpHandler(void *pvParameters);
 void udpHandleDataMessage(DeviceMessage deviceMessage);
 void udpHandleOnboardMessage(DeviceMessage deviceMessage);
 void udpHandleAliveMessage(DeviceMessage deviceMessage);
+void startWebServer();
 
 unsigned int wifiConnectionAttempts = 0;
 unsigned int wifiConnectionAttemptsMax = 10;
@@ -40,7 +44,15 @@ void setup()
 {
   Serial.begin(115200);
 
-  delay(2000); // delay for 2 seconds
+  delay(1000); // delay for 2 seconds
+
+  // SPIFFS
+  // Initialize SPIFFS
+  if (!SPIFFS.begin(true))
+  {
+    Serial.println("An Error has occurred while mounting SPIFFS");
+    return;
+  }
 
   // WiFi
   WiFi.begin(ssid, password);
@@ -68,22 +80,25 @@ void setup()
   // set the CA cert for the WiFi client
   wifiClient.setCACert(root_ca);
 
+  // Web server
+  startWebServer();
+
   // Preferences
   preferences.begin("asset-manager" + REVISION, false);
   // preferences.clear();
 
   // MQTT
-  openRemotePubSub.client.setServer(mqtt_host, mqtt_port);
-  openRemotePubSub.client.setCallback(mqttCallbackHandler);
+  openRemoteMqtt.client.setServer(mqtt_host, mqtt_port);
+  openRemoteMqtt.client.setCallback(mqttCallbackHandler);
 
   // Mutex
   mqttClientMutex = xSemaphoreCreateMutex();
 
   // Device Manager
-  deviceAssetManager.init();
+  assetManager.init();
   Serial.println("+ Device manager initialized");
   Serial.print("Asset count: ");
-  Serial.println(deviceAssetManager.assets.size());
+  Serial.println(assetManager.assets.size());
 
   // Tasks - MQTT and UDP, adjust stack size if needed, ensure main thread is not starved though.
   xTaskCreate(mqttConnectionHandler, "MQTT Connection Task", 34816, NULL, 1, NULL); // 34KB stack size, recommended with SSL
@@ -114,7 +129,7 @@ void loop()
     lastSystemStatusUpdate = millis();
   }
 
-  openRemotePubSub.client.loop();
+  openRemoteMqtt.client.loop();
   delay(10);
 }
 
@@ -126,32 +141,31 @@ void mqttConnectionHandler(void *pvParameters)
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       // Reconnect to MQTT if disconnected
-      if (!openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
+      if (!openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED)
       {
         Serial.print("Connecting to MQTT, host: ");
         Serial.print(mqtt_host);
         Serial.print(", port: ");
         Serial.println(mqtt_port);
 
-        if (openRemotePubSub.client.connect(mqtt_client_id, mqtt_user, mqtt_pas))
+        if (openRemoteMqtt.client.connect(mqtt_client_id, mqtt_user, mqtt_pas))
         {
           Serial.println("+ MQTT connected");
 
           // Update the gateway status to online (connected)
-          openRemotePubSub.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
+          openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
 
           // Subscribe to pending gateway events, we need to acknowledge these events.
-          SubscriptionResult result = openRemotePubSub.subscribeToPendingGatewayEvents("master");
-          if (result.success)
+          if (openRemoteMqtt.subscribeToPendingGatewayEvents("master"))
           {
             Serial.println("+ Subscribed to pending gateway events");
           }
 
           // Sent our local asset data to OpenRemote, to ensure it is in sync.
-          for (int i = 0; i < deviceAssetManager.assets.size(); i++)
+          for (int i = 0; i < assetManager.assets.size(); i++)
           {
-            DeviceAsset asset = deviceAssetManager.assets[i];
-            if (openRemotePubSub.createAsset("master", asset.managerJson, asset.sn.c_str(), false))
+            DeviceAsset asset = assetManager.assets[i];
+            if (openRemoteMqtt.createAsset("master", asset.managerJson, asset.sn.c_str(), false))
             {
               Serial.print("+ Sent asset data to OpenRemote, sn: ");
               Serial.println(asset.sn.c_str());
@@ -165,9 +179,9 @@ void mqttConnectionHandler(void *pvParameters)
       }
 
       // Update the gateway status to online (connected) - constant update, ensuring the status is always correct.
-      if (openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
+      if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED)
       {
-        openRemotePubSub.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
+        openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
       }
 
       xSemaphoreGive(mqttClientMutex);
@@ -188,7 +202,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
     {
       Serial.println("Request response received");
       // unsubscribe from response topics, part of the request-response pattern
-      openRemotePubSub.client.unsubscribe(topic);
+      openRemoteMqtt.client.unsubscribe(topic);
       DynamicJsonDocument doc(4096);
       deserializeJson(doc, payload, length);
 
@@ -202,7 +216,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
         DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
         Serial.print("+ Device onboarded, sn: ");
         Serial.println(deviceAsset.sn.c_str());
-        deviceAssetManager.addDeviceAsset(deviceAsset);
+        assetManager.addDeviceAsset(deviceAsset);
       }
       xSemaphoreGive(mqttClientMutex);
     }
@@ -220,7 +234,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       Serial.println("Pending gateway event received:");
       Serial.println(event.c_str());
 
-      if (openRemotePubSub.acknowledgeGatewayEvent(topic))
+      if (openRemoteMqtt.acknowledgeGatewayEvent(topic))
       {
         Serial.println("+ Pending event acknowledged");
       }
@@ -237,7 +251,7 @@ void udpHandler(void *pvParameters)
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       // Ensure we are connected to OpenRemote and WiFi
-      if (openRemotePubSub.client.connected() && WiFi.status() == WL_CONNECTED)
+      if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED)
       {
         int packetSize = udp.parsePacket();
         if (packetSize)
@@ -277,7 +291,7 @@ void udpHandleAliveMessage(DeviceMessage deviceMessage)
 {
 
   // Request onboarding if device is not onboarded
-  if (!deviceAssetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
+  if (!assetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
   {
     udp.beginPacket(udp.remoteIP(), udp.remotePort());
     udp.write((const uint8_t *)ONBOARD_REQ, 11);
@@ -286,7 +300,7 @@ void udpHandleAliveMessage(DeviceMessage deviceMessage)
   // Update connection details if device is onboarded
   else
   {
-    deviceAssetManager.setConnection(deviceMessage.device_sn.c_str(), udp.remoteIP(), udp.remotePort());
+    assetManager.setConnection(deviceMessage.device_sn.c_str(), udp.remoteIP(), udp.remotePort());
   }
 }
 
@@ -296,7 +310,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
   Serial.println(deviceMessage.data.c_str());
 
   // Request onboarding if device is not onboarded
-  if (!deviceAssetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
+  if (!assetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
   {
     udp.beginPacket(udp.remoteIP(), udp.remotePort());
     udp.write((const uint8_t *)ONBOARD_REQ, 11);
@@ -308,17 +322,17 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
     // Presence data of presence sensor devices
     if (deviceMessage.device_type == PRESENCE_SENSOR_ASSET)
     {
-      std::string assetId = deviceAssetManager.getDeviceAssetId(deviceMessage.device_sn);
-      openRemotePubSub.updateAttribute("master", assetId, "presence", deviceMessage.data, false);
+      std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
+      openRemoteMqtt.updateAttribute("master", assetId, "presence", deviceMessage.data, false);
     }
 
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
     {
-      std::string assetId = deviceAssetManager.getDeviceAssetId(deviceMessage.device_sn);
+      std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
       DynamicJsonDocument doc(1024);
       deserializeJson(doc, deviceMessage.data);
-      openRemotePubSub.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
-      openRemotePubSub.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
+      openRemoteMqtt.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
+      openRemoteMqtt.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
     }
   }
 }
@@ -326,7 +340,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
 void udpHandleOnboardMessage(DeviceMessage deviceMessage)
 {
   // Check if device is already onboarded in our local asset manager
-  if (deviceAssetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
+  if (assetManager.isDeviceOnboarded(deviceMessage.device_sn.c_str()))
   {
     Serial.println("Device is onboarded");
     // Send ONBOARDOK back to udp
@@ -334,17 +348,17 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     udp.write((const uint8_t *)ONBOARD_OK, 10);
     udp.endPacket();
 
-    deviceAssetManager.setConnection(deviceMessage.device_sn.c_str(), udp.remoteIP(), udp.remotePort());
+    assetManager.setConnection(deviceMessage.device_sn.c_str(), udp.remoteIP(), udp.remotePort());
 
     Serial.print("+ Sent ONBOARD_OK to host: ");
     Serial.print(udp.remoteIP());
     Serial.print(", port: ");
     Serial.println(udp.remotePort());
 
-    deviceAssetManager.removePendingOnboarding(deviceMessage.device_sn.c_str()); // remove from pending onboarding - we are done.
+    assetManager.removePendingOnboarding(deviceMessage.device_sn.c_str()); // remove from pending onboarding - we are done.
   }
   // Check if device is pending onboarding, prevent queuing multiple onboarding requests
-  else if (deviceAssetManager.isOnboardingPending(deviceMessage.device_sn.c_str()))
+  else if (assetManager.isOnboardingPending(deviceMessage.device_sn.c_str()))
   {
     Serial.println("Device is pending onboarding");
   }
@@ -352,7 +366,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
   else
   {
     // Put the device in the pending onboarding list
-    deviceAssetManager.addPendingOnboarding(deviceMessage.device_sn.c_str());
+    assetManager.addPendingOnboarding(deviceMessage.device_sn.c_str());
 
     // Onboard the device with OpenRemote - based on device type, asset templates need to be extended for new types.
     // We can add new asset types in the asset_templates.h file.
@@ -362,7 +376,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       PlugAsset asset = PlugAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemotePubSub.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
       {
         Serial.println("+ Sent asset create request");
       }
@@ -373,7 +387,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       EnvironmentSensorAsset asset = EnvironmentSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemotePubSub.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
       {
         Serial.println("+ Sent asset create request");
       }
@@ -384,10 +398,59 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       PresenceSensorAsset asset = PresenceSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemotePubSub.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
       {
         Serial.println("+ Sent asset create request");
       }
     }
   }
+}
+
+void startWebServer()
+{
+
+  // Serve static files
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+
+  // Endpoint for retrieving list of assets
+  server.on("/manager/assets", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+      DynamicJsonDocument doc(4096);
+      JsonArray assets = doc.createNestedArray("assets");
+
+      for (int i = 0; i < assetManager.assets.size(); i++)
+      {
+        DeviceAsset asset = assetManager.assets[i];
+        JsonObject assetJson = assets.createNestedObject();
+        assetJson["sn"] = asset.sn;
+        assetJson["type"] = asset.type;
+        assetJson["id"] = asset.id;
+      }
+
+      std::string output;
+      serializeJson(doc, output);
+      request->send(200, "application/json", output.c_str()); });
+
+  // Delete asset endpoint
+  server.on("/manager/assets/:id", HTTP_DELETE, [](AsyncWebServerRequest *request)
+            {
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+      {
+        String id = request->pathArg(0);
+        if (openRemoteMqtt.deleteAsset("master", id.c_str()))
+        {
+          if (assetManager.deleteDeviceAsset(id.c_str()))
+          {
+            request->send(200, "application/json", "{\"status\": \"ok\"}");
+          }
+          else
+          {
+            request->send(500, "application/json", "{\"status\": \"error\"}");
+          }
+        }
+        xSemaphoreGive(mqttClientMutex);
+      } });
+
+  // Start the server
+  server.begin();
 }

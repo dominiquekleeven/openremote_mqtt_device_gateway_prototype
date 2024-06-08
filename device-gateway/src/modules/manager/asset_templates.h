@@ -1,5 +1,6 @@
 
 #include <ArduinoJson.h>
+#include <vector>
 
 #define PLUG_ASSET "PlugAsset"
 #define PRESENCE_SENSOR_ASSET "PresenceSensorAsset"
