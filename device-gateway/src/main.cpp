@@ -138,6 +138,7 @@ void mqttConnectionHandler(void *pvParameters)
 {
   while (true)
   {
+    // Ensure we have the mutex
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       // Reconnect to MQTT if disconnected
@@ -184,9 +185,10 @@ void mqttConnectionHandler(void *pvParameters)
         openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
       }
 
+      // Give the mutex back
       xSemaphoreGive(mqttClientMutex);
     }
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // we check every 2 seconds, adjust if needed.
   }
 }
 // Callback function for MQTT
@@ -198,6 +200,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   // Handle response topics
   if (strstr(topic, "response") != NULL)
   {
+    // Grab the mutex, we are going to access the mqtt client
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       Serial.println("Request response received");
@@ -218,6 +221,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
         Serial.println(deviceAsset.sn.c_str());
         assetManager.addDeviceAsset(deviceAsset);
       }
+      // Give the mutex back
       xSemaphoreGive(mqttClientMutex);
     }
   }
@@ -225,6 +229,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   // Handle pending events
   if (strstr(topic, "gateway/events/pending") != NULL)
   {
+    // Grab the mutex, we are going to access the mqtt client
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       DynamicJsonDocument doc(1024);
@@ -238,6 +243,8 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       {
         Serial.println("+ Pending event acknowledged");
       }
+
+      // Give the mutex back
       xSemaphoreGive(mqttClientMutex);
     }
   }
@@ -248,6 +255,7 @@ void udpHandler(void *pvParameters)
   udp.begin(udp_port);
   while (true)
   {
+    // Ensure we have the mutex, we are going to access the mqtt client
     if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
     {
       // Ensure we are connected to OpenRemote and WiFi
@@ -280,6 +288,8 @@ void udpHandler(void *pvParameters)
           }
         }
       }
+
+      // Give the mutex back - we are done with the mqtt client
       xSemaphoreGive(mqttClientMutex);
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -434,6 +444,8 @@ void startWebServer()
   // Delete asset endpoint
   server.on("/manager/assets/:id", HTTP_DELETE, [](AsyncWebServerRequest *request)
             {
+
+      // take the mutex cause we are going to access the mqtt client
       if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
       {
         String id = request->pathArg(0);
@@ -448,6 +460,7 @@ void startWebServer()
             request->send(500, "application/json", "{\"status\": \"error\"}");
           }
         }
+        // give the mutex back
         xSemaphoreGive(mqttClientMutex);
       } });
 
