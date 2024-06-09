@@ -1,5 +1,5 @@
-#include "config/secrets.h"
-#include "external/OpenRemotePubSubClient/openremote_pubsub.h"
+
+// External includes, libraries
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <WiFi.h>
@@ -7,6 +7,10 @@
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
+
+// Internal includes
+#include "config/secrets.h"
+#include "external/OpenRemotePubSubClient/openremote_pubsub.h"
 #include "modules/messaging/device_message.h"
 #include "modules/manager/asset_manager.h"
 #include "modules/manager/asset_templates.h"
