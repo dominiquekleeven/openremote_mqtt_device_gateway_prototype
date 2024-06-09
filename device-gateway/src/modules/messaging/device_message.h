@@ -45,7 +45,7 @@ struct DeviceMessage
 
     std::string toJson()
     {
-        DynamicJsonDocument doc(1024);
+        JsonDocument doc;
         doc["device_name"] = device_name;
         doc["device_sn"] = device_sn;
         doc["device_type"] = device_type;
@@ -59,7 +59,7 @@ struct DeviceMessage
 
     static DeviceMessage fromJson(std::string json)
     {
-        DynamicJsonDocument doc(1024);
+        JsonDocument doc;
         deserializeJson(doc, json);
         return DeviceMessage(doc["device_name"].as<std::string>(), doc["device_sn"].as<std::string>(), doc["device_type"].as<std::string>(), doc["data"].as<std::string>(), (MessageType)doc["message_type"].as<int>());
     }

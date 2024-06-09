@@ -9,10 +9,9 @@
 
 <body>
     <main>
-
         <div class="actions">
             <a href="/">Go back</a>
-            <button id="updateButton">Update</button>
+            <button onclick="updateAsset()" id="updateButton">Update</button>
             <button onclick="deleteAsset()">Delete</button>
         </div>
 
@@ -21,6 +20,7 @@
             <h3 style="margin-bottom: 0;">Asset details <span id="assetId"></span></h3>
 
             <span id="jsonerror"></span>
+            <span id="success"></span>
             <!-- JSON TextArea -->
             <textarea onkeyup="textareaOnChange()" id="assetDetails" rows="30" cols="50">
 
@@ -29,7 +29,6 @@
         </div>
     </main>
 </body>
-
 <script>
 
     function getIdParamValue() {
@@ -89,15 +88,49 @@
         var json = assetDetailsTextArea.value;
         if (!isJsonValid(json)) {
             document.getElementById('jsonerror').innerHTML = 'JSON is invalid, unable to update asset details.';
-            //disable update button
             document.getElementById('updateButton').disabled = true;
             return;
         }
         document.getElementById('jsonerror').innerHTML = '';
-        //enable update button
         document.getElementById('updateButton').disabled = false;
     }
 
+
+    function updateAsset() {
+        var assetId = getIdParamValue();
+        if (assetId === null) {
+            console.error('Asset ID is missing');
+            return;
+        }
+
+        var confirmation = confirm('Are you sure you want to update asset with ID: ' + assetId + '?');
+        if (!confirmation) {
+            return;
+        }
+
+        var assetDetailsTextArea = document.getElementById('assetDetails');
+        var json = assetDetailsTextArea.value;
+        if (!isJsonValid(json)) {
+            alert('JSON is invalid, unable to update asset details.');
+            return;
+        }
+
+        fetch('manager/assets?id=' + assetId, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: json
+        }).then(response => response.json()).then(data => {
+            if (data.status === 'ok') {
+                document.getElementById('success').innerHTML = 'Asset updated successfully';
+                location.href = '/';
+            }
+        }).catch((error) => {
+            alert('Failed to update asset');
+            console.error('Error:', error);
+        });
+    }
 
     function deleteAsset() {
         var assetId = getIdParamValue();
@@ -118,7 +151,6 @@
                 alert('Failed to delete asset');
                 console.error('Error:', error);
             });
-
         }
     }
 

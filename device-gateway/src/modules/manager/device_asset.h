@@ -20,7 +20,7 @@ struct DeviceAsset
 
     static DeviceAsset fromJson(std::string json)
     {
-        DynamicJsonDocument doc(4096);
+        JsonDocument doc;
         deserializeJson(doc, json);
         DeviceAsset asset;
         asset.id = doc["id"].as<std::string>();

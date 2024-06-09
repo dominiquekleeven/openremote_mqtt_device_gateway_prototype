@@ -14,6 +14,7 @@
 #include "modules/messaging/device_message.h"
 #include "modules/manager/asset_manager.h"
 #include "modules/manager/asset_templates.h"
+#include <map>
 
 using namespace std;
 
@@ -190,7 +191,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       xSemaphoreGive(pubSubSemaphore);
     }
 
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     deserializeJson(doc, payload, length);
 
     // Handle asset events
@@ -210,7 +211,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
   // Handle pending events
   if (strstr(topic, "gateway/events/pending") != NULL)
   {
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     deserializeJson(doc, payload, length);
     std::string event = doc.as<std::string>();
 
@@ -309,7 +310,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
     {
       std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
-      DynamicJsonDocument doc(1024);
+      JsonDocument doc;
       deserializeJson(doc, deviceMessage.data);
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
@@ -400,11 +401,19 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
   }
 }
 
+// HTTP Request Buffers, large requests are split into multiple packets (This is default behavior for HTTP)
+std::map<String, std::vector<uint8_t>> requestBuffers;
+
+// Start the web server
+// - /: serves index.html
+// - /view?id=xxxxx: view page of an asset
+// - /manager/assets: GET: list of assets, GET ?id=xxxxx, DELETE ?id=xxxxx, PUT ?id=xxxxx
+// - /system/status: GET: system status (ip, heap, uptime)
 void startWebServer()
 {
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
-  // View page of an asset
+  // Serve asset view page
   server.on("/view", HTTP_GET, [](AsyncWebServerRequest *request)
             {
     if(request->hasParam("id")){
@@ -414,7 +423,7 @@ void startWebServer()
       request->send(404, "text/plain", "404: Not Found");
     } });
 
-  // Endpoint for retrieving list of assets
+  // List - Single asset endpoint
   server.on("/manager/assets", HTTP_GET, [](AsyncWebServerRequest *request)
             {
     if (request->hasParam("id"))
@@ -427,32 +436,32 @@ void startWebServer()
       }
       else
       {
-        DynamicJsonDocument doc(4096);
+        JsonDocument doc;
         doc["sn"] = asset.sn;
         doc["type"] = asset.type;
         doc["id"] = asset.id;
         doc["managerJson"] = asset.managerJson;
 
         std::string output;
-        serializeJson(doc, output);
+        ArduinoJson::serializeJson(doc, output);
         request->send(200, "application/json", output.c_str());
       }
     }
     else
     {
-      DynamicJsonDocument doc(8192);
-      JsonArray assets = doc.createNestedArray("assets");
+      JsonDocument doc;
+      JsonArray assets = doc["assets"].to<JsonArray>();
 
       for (int i = 0; i < assetManager.assets.size(); i++)
       {
         DeviceAsset asset = assetManager.assets[i];
-        JsonObject assetJson = assets.createNestedObject();
+        JsonObject assetJson = assets.add<JsonObject>();
         assetJson["sn"] = asset.sn;
         assetJson["type"] = asset.type;
         assetJson["id"] = asset.id;
       }
       std::string output;
-      serializeJson(doc, output);
+      ArduinoJson::serializeJson(doc, output);
       request->send(200, "application/json", output.c_str());
     } });
 
@@ -483,15 +492,56 @@ void startWebServer()
         }
       } });
 
+  // Update asset endpoint, uses buffer to store large requests
+  server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+                       {
+    if (request->hasParam("id") && request->url () == "/manager/assets" && request->method() == HTTP_PUT)
+    {
+      String id = request->getParam("id")->value();
+        if (index == 0) {
+            requestBuffers[id].clear();
+        }
+        requestBuffers[id].insert(requestBuffers[id].end(), data, data + len);
+
+    if (index + len == total) {
+      std::vector<uint8_t>& buffer = requestBuffers[id];
+      JsonDocument doc;
+      ArduinoJson::deserializeJson(doc, buffer.data(), buffer.size());
+      std::string json = doc.as<std::string>();
+
+      // take the semaphore cause we are going to access the mqtt client
+      if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+      {
+        if (assetManager.updateDeviceAssetJson(id.c_str(), json.c_str()))
+        {
+          openRemoteMqtt.updateAsset("master", id.c_str(), json.c_str());
+          request->send(200, "application/json", "{\"status\": \"ok\"}");
+        }
+        else
+        {
+          request->send(500, "application/json", "{\"status\": \"error\"}");
+        }
+        // give the semaphore back
+        xSemaphoreGive(pubSubSemaphore);
+      }
+      else
+      {
+        request->send(404, "application/json", "{\"status\": \"error\"}");
+      }
+        // Clear the buffer after processing
+      requestBuffers.erase(id);
+    }
+    } });
+
   // Endpoint to get local ip + free heap space + uptime
   server.on("/system/status", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-      DynamicJsonDocument doc(1024);
+      JsonDocument doc;
       doc["ip"] = WiFi.localIP();
       doc["heap"] = ESP.getFreeHeap() / 1024;
       doc["uptime"] = millis() / 1000;
       std::string output;
-      serializeJson(doc, output);
+      ArduinoJson::serializeJson(doc, output);
       request->send(200, "application/json", output.c_str()); });
 
   // Start the server

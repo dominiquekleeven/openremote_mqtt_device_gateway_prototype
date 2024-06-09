@@ -23,23 +23,23 @@ struct BaseAsset
     // accept array of std::strings
     std::string toJson(std::vector<std::string> extras)
     {
-        DynamicJsonDocument doc(4096);
+        JsonDocument doc;
         doc["type"] = type;
         doc["name"] = name;
 
-        JsonObject attributes = doc.createNestedObject("attributes");
+        JsonObject attributes = doc["attributes"].to<JsonObject>();
         if (extras.size() > 0)
         {
             for (int i = 0; i < extras.size(); i++)
             {
-                JsonObject extra = attributes.createNestedObject(extras[i]);
+                JsonObject extra = attributes[extras[i]].to<JsonObject>();
             }
         }
 
-        JsonObject notes = attributes.createNestedObject("notes");
-        JsonObject location = attributes.createNestedObject("location");
-        JsonObject serial = attributes.createNestedObject("sn");
-        JsonObject serialMeta = serial.createNestedObject("meta");
+        JsonObject notes = attributes["notes"].to<JsonObject>();
+        JsonObject location = attributes["location"].to<JsonObject>();
+        JsonObject serial = attributes["sn"].to<JsonObject>();
+        JsonObject serialMeta = serial["meta"].to<JsonObject>();
 
         serialMeta["readOnly"] = true;
         serial["name"] = "sn";

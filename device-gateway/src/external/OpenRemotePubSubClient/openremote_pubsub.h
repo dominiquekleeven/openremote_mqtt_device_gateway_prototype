@@ -133,6 +133,34 @@ public:
         return client.publish(topic, "");
     }
 
+    /// @brief Update an asset
+    /// @param realm
+    /// @param assetId (ID of the asset, 22 character string)
+    /// @param assetTemplate (JSON representation of the asset)
+    /// @param subscribeToResponse (default is false)
+    bool updateAsset(std::string realm, std::string assetId, std::string assetTemplate, bool subscribeToResponse = false)
+    {
+        if (!client.connected())
+        {
+            return false;
+        }
+        char topic[256];
+        snprintf(topic, sizeof(topic), "%s/%s/operations/assets/%s/update", realm.c_str(), clientId.c_str(), assetId.c_str());
+
+        if (subscribeToResponse)
+        {
+            char responseTopic[256];
+            snprintf(responseTopic, sizeof(responseTopic), "%s/response", topic);
+            if (!client.subscribe(responseTopic))
+            {
+                return false;
+            }
+        }
+
+        const char *payload = assetTemplate.c_str();
+        return client.publish(topic, payload);
+    }
+
     /// @brief Acknowledge a gateway event
     /// @param topic
     /// @return bool

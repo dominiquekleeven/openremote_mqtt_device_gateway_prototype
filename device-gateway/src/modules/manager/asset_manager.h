@@ -144,6 +144,37 @@ public:
             if (assets[i].id.c_str() == assetId)
             {
                 assets.erase(assets.begin() + i);
+                updatePreferences();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @brief Update the preferences with the current device assets, should be called after adding, updating or removing a device asset
+    void updatePreferences()
+    {
+        uint count = preferences.getUInt("count", 0);
+        for (int i = 0; i < count; i++)
+        {
+            preferences.remove(std::to_string(i).c_str());
+        }
+        for (int i = 0; i < assets.size(); i++)
+        {
+            preferences.putString(std::to_string(i).c_str(), assets[i].managerJson.c_str());
+        }
+        preferences.putUInt("count", assets.size());
+    }
+
+    /// @brief Update the device asset JSON representation
+    bool updateDeviceAssetJson(std::string assetId, std::string json)
+    {
+        for (int i = 0; i < assets.size(); i++)
+        {
+            if (assets[i].id.c_str() == assetId)
+            {
+                assets[i].managerJson = json;
+                updatePreferences();
                 return true;
             }
         }

@@ -158,7 +158,12 @@ a:hover {
 
 #jsonerror {
     color: red;
+    font-size: 0.9em;
+    font-weight: 500;
+}
 
+#success {
+    color: green;
     font-size: 0.9em;
     font-weight: 500;
 }
