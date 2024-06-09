@@ -24,6 +24,12 @@
                 </tr>
             </table>
         </div>
+
+        <div class="status">
+            <span id="#localip"></span>
+            <span id="#heap"></span>
+            <span id="#uptime"></span>
+        </div>
     </main>
 </body>
 
@@ -33,7 +39,6 @@
         fetch('/manager/assets')
             .then(response => response.json())
             .then(data => {
-                console.log(data.assets);
                 assets = data.assets;
                 if (assets.length === 0) {
                     var table = document.querySelector('table');
@@ -89,10 +94,27 @@
         window.location.href = '/view?id=' + id;
     }
 
+    function getSystemStatus() {
+        fetch('/system/status')
+            .then(response => response.json())
+            .then(data => {
+                var localip = document.getElementById('#localip');
+                var heap = document.getElementById('#heap');
+                var uptime = document.getElementById('#uptime');
+                localip.innerHTML = 'IP: ' + data.ip + ' - ';
+                heap.innerHTML = 'Free heap: ' + data.heap + 'kb - ';
+                uptime.innerHTML = 'Uptime: ' + data.uptime + 'sec';
+            })
+            .catch(error => {
+                console.warn("Failed to fetch system status")
+                return;
+            });
+    }
 
 
 
 
+    getSystemStatus();
     fetchAssets();
 </script>
 

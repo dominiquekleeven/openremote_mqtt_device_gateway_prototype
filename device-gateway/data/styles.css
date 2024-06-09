@@ -1,7 +1,8 @@
 :root {
     --primary-color: #c3d500;
-    --secondary-color: #364c4f;
-    --text-color: #364c4f;
+    --secondary-color: #4c4c4c;
+    --secondary-color-light: #e5e5e5;
+    --text-color: #4c4c4c;
 
 }
 
@@ -31,7 +32,7 @@ h5,
 h6 {
     color: var(--secondary-color);
     margin: 0;
-    margin-bottom: 10px;
+    margin-bottom: 5px;
 }
 
 .intro {
@@ -60,7 +61,7 @@ main {
 hr {
     border: 0;
     height: 1px;
-    background: var(--primary-color);
+    background-color: var(--secondary-color-light);
 
     width: 100%;
 }
@@ -94,31 +95,30 @@ table .serial {
 
 table {
     width: 100%;
-    padding: 5px;
+    padding: 7px;
     border-collapse: collapse;
     font-size: 0.9em;
 }
 
 tr {
-    border: 1px solid var(--primary-color);
+    background-color: white;
+    transition: 0.1s;
 }
 
 th {
-    border: 1px solid var(--primary-color);
-    padding: 5px;
-    background-color: var(--primary-color);
-    color: white;
-    font-weight: 500;
+    padding: 7px;
+    background-color: var(--secondary-color-light);
+    color: var(--secondary-color);
+    font-weight: 550;
+    text-transform: uppercase;
 }
 
 td {
-    border: 1px solid var(--primary-color);
-    padding: 5px;
+    border: 1px solid var(--secondary-color-light);
+    padding: 7px;
     text-align: center;
     text-wrap: wrap;
     word-wrap: break-word;
-
-
 }
 
 button {
@@ -161,4 +161,21 @@ a:hover {
 
     font-size: 0.9em;
     font-weight: 500;
+}
+
+.status {
+    font-size: 0.8em;
+    margin-top: 5px;
+}
+
+textarea {
+    padding: 5px;
+    border: 2px solid var(--secondary-color-light);
+    border-radius: 0;
+}
+
+
+textarea:focus-visible {
+    border: 2px solid var(--primary-color) !important;
+    outline: none;
 }

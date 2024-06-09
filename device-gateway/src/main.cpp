@@ -483,6 +483,17 @@ void startWebServer()
         }
       } });
 
+  // Endpoint to get local ip + free heap space + uptime
+  server.on("/system/status", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+      DynamicJsonDocument doc(1024);
+      doc["ip"] = WiFi.localIP();
+      doc["heap"] = ESP.getFreeHeap() / 1024;
+      doc["uptime"] = millis() / 1000;
+      std::string output;
+      serializeJson(doc, output);
+      request->send(200, "application/json", output.c_str()); });
+
   // Start the server
   server.begin();
 }
