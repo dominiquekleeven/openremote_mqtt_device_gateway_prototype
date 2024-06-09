@@ -39,7 +39,7 @@ void setup()
 // onboarding millis
 unsigned long onboardingMillis = 0;
 unsigned long measurementMillis = 0;
-unsigned long measurementInterval = 10000; // 10s
+unsigned long measurementInterval = 60000; // 60s
 float lastTemperatureMeasurement = 0;
 float lastHumidityMeasurement = 0;
 

@@ -121,14 +121,6 @@ void loop()
     lastReconnectAttempt = millis();
   }
 
-  // Print system info, e.g. free stack space
-  if ((millis() - lastSystemStatusUpdate) > lastSystemStatusUpdateInterval)
-  {
-    Serial.print("[i] Free heap space: ");
-    Serial.println(ESP.getFreeHeap());
-    lastSystemStatusUpdate = millis();
-  }
-
   openRemoteMqtt.client.loop();
   delay(100);
 }
@@ -180,8 +172,9 @@ void mqttConnectionHandler(void *pvParameters)
       }
 
       // Update the gateway status to online (connected) - constant update, ensuring the status is always correct.
-      if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED)
+      if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED && (millis() - lastSystemStatusUpdate) > lastSystemStatusUpdateInterval)
       {
+        lastSystemStatusUpdate = millis();
         openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
       }
 
@@ -256,41 +249,36 @@ void udpHandler(void *pvParameters)
   while (true)
   {
     // Ensure we have the mutex, we are going to access the mqtt client
-    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+
+    // Ensure we are connected to OpenRemote and WiFi
+    if (WiFi.status() == WL_CONNECTED)
     {
-      // Ensure we are connected to OpenRemote and WiFi
-      if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED)
+      int packetSize = udp.parsePacket();
+      if (packetSize)
       {
-        int packetSize = udp.parsePacket();
-        if (packetSize)
+        char incomingPacket[255];
+        udp.read(incomingPacket, 255);
+        incomingPacket[packetSize] = 0;
+
+        // Parse incoming packet to DeviceMessage
+        DeviceMessage deviceMessage = DeviceMessage::fromJson(incomingPacket);
+
+        // DATA - used for sending data from devices to the gateway
+        if (deviceMessage.message_type == DATA_MESSAGE)
         {
-          char incomingPacket[255];
-          udp.read(incomingPacket, 255);
-          incomingPacket[packetSize] = 0;
-
-          // Parse incoming packet to DeviceMessage
-          DeviceMessage deviceMessage = DeviceMessage::fromJson(incomingPacket);
-
-          // DATA - used for sending data from devices to the gateway
-          if (deviceMessage.message_type == DATA_MESSAGE)
-          {
-            udpHandleDataMessage(deviceMessage);
-          }
-          // ALIVE - used for device check, and updating connection details
-          if (deviceMessage.message_type == ALIVE_MESSAGE)
-          {
-            udpHandleAliveMessage(deviceMessage);
-          }
-          // ONBOARDING - used for onboarding devices locally and on OpenRemote
-          if (deviceMessage.message_type == ONBOARD_MESSAGE)
-          {
-            udpHandleOnboardMessage(deviceMessage);
-          }
+          udpHandleDataMessage(deviceMessage);
+        }
+        // ALIVE - used for device check, and updating connection details
+        if (deviceMessage.message_type == ALIVE_MESSAGE)
+        {
+          udpHandleAliveMessage(deviceMessage);
+        }
+        // ONBOARDING - used for onboarding devices locally and on OpenRemote
+        if (deviceMessage.message_type == ONBOARD_MESSAGE)
+        {
+          udpHandleOnboardMessage(deviceMessage);
         }
       }
-
-      // Give the mutex back - we are done with the mqtt client
-      xSemaphoreGive(mqttClientMutex);
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
@@ -333,7 +321,13 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
     if (deviceMessage.device_type == PRESENCE_SENSOR_ASSET)
     {
       std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
-      openRemoteMqtt.updateAttribute("master", assetId, "presence", deviceMessage.data, false);
+      // get the mutex cause we are going to access the mqtt client
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+      {
+        openRemoteMqtt.updateAttribute("master", assetId, "presence", deviceMessage.data, false);
+        // give the mutex back
+        xSemaphoreGive(mqttClientMutex);
+      }
     }
 
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
@@ -341,8 +335,14 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
       std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
       DynamicJsonDocument doc(1024);
       deserializeJson(doc, deviceMessage.data);
-      openRemoteMqtt.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
-      openRemoteMqtt.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
+      // get the mutex cause we are going to access the mqtt client
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+      {
+        openRemoteMqtt.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
+        openRemoteMqtt.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
+        // give the mutex back
+        xSemaphoreGive(mqttClientMutex);
+      }
     }
   }
 }
@@ -386,9 +386,16 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       PlugAsset asset = PlugAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+
+      // get the mutex cause we are going to access the mqtt client
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
       {
-        Serial.println("+ Sent asset create request");
+        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        {
+          Serial.println("+ Sent asset create request");
+        }
+        // give the mutex back
+        xSemaphoreGive(mqttClientMutex);
       }
     }
 
@@ -397,9 +404,15 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       EnvironmentSensorAsset asset = EnvironmentSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+      // get the mutex cause we are going to access the mqtt client
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
       {
-        Serial.println("+ Sent asset create request");
+        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        {
+          Serial.println("+ Sent asset create request");
+        }
+        // give the mutex back
+        xSemaphoreGive(mqttClientMutex);
       }
     }
 
@@ -408,9 +421,15 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     {
       PresenceSensorAsset asset = PresenceSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
-      if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+      // get the mutex cause we are going to access the mqtt client
+      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
       {
-        Serial.println("+ Sent asset create request");
+        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        {
+          Serial.println("+ Sent asset create request");
+        }
+        // give the mutex back
+        xSemaphoreGive(mqttClientMutex);
       }
     }
   }
@@ -418,7 +437,6 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
 
 void startWebServer()
 {
-  // Serve static files
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
   // View page of an asset
@@ -426,7 +444,6 @@ void startWebServer()
             {
     if(request->hasParam("id")){
       String id = request->getParam("id")->value();
-      // You can pass the id to the view.html through a placeholder or a query string
       request->send(SPIFFS, "/view.html", "text/html");
     } else {
       request->send(404, "text/plain", "404: Not Found");
@@ -469,21 +486,20 @@ void startWebServer()
         assetJson["type"] = asset.type;
         assetJson["id"] = asset.id;
       }
-
       std::string output;
       serializeJson(doc, output);
       request->send(200, "application/json", output.c_str());
-    } }); // Add closing parenthesis here
+    } });
 
   // Delete asset endpoint
   server.on("/manager/assets", HTTP_DELETE, [](AsyncWebServerRequest *request)
             {
-    // take the mutex cause we are going to access the mqtt client
-    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
-    {
-      if (request->hasParam("id"))
+    if (request->hasParam("id"))
     {
       String id = request->getParam("id")->value();
+     // take the mutex cause we are going to access the mqtt client
+    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+    {
       if (openRemoteMqtt.deleteAsset("master", id.c_str()))
       {
         if (assetManager.deleteDeviceAssetById(id.c_str()))
@@ -495,13 +511,13 @@ void startWebServer()
           request->send(500, "application/json", "{\"status\": \"error\"}");
         }
       }
+      // give the mutex back
+      xSemaphoreGive(mqttClientMutex);
     }
     else
     {
       request->send(404, "application/json", "{\"status\": \"error\"}");
     }
-      // give the mutex back
-      xSemaphoreGive(mqttClientMutex);
     } });
 
   // Start the server
