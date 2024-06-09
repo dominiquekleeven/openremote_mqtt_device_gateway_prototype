@@ -130,7 +130,7 @@ void loop()
   }
 
   openRemoteMqtt.client.loop();
-  delay(10);
+  delay(100);
 }
 
 // MQTT Task
@@ -217,8 +217,8 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       if (isAssetEvent && isCreationEvent)
       {
         DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
-        Serial.print("+ Device onboarded, sn: ");
-        Serial.println(deviceAsset.sn.c_str());
+        Serial.print("+ Device onboarded, data: ");
+        Serial.println(deviceAsset.managerJson.c_str());
         assetManager.addDeviceAsset(deviceAsset);
       }
       // Give the mutex back
@@ -418,14 +418,47 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
 
 void startWebServer()
 {
-
   // Serve static files
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+
+  // View page of an asset
+  server.on("/view", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    if(request->hasParam("id")){
+      String id = request->getParam("id")->value();
+      // You can pass the id to the view.html through a placeholder or a query string
+      request->send(SPIFFS, "/view.html", "text/html");
+    } else {
+      request->send(404, "text/plain", "404: Not Found");
+    } });
 
   // Endpoint for retrieving list of assets
   server.on("/manager/assets", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-      DynamicJsonDocument doc(4096);
+    if (request->hasParam("id"))
+    {
+      String id = request->getParam("id")->value();
+      DeviceAsset asset = assetManager.getDeviceAssetById(id.c_str());
+      if (asset.id == "")
+      {
+        request->send(404, "application/json", "{\"status\": \"error\"}");
+      }
+      else
+      {
+        DynamicJsonDocument doc(4096);
+        doc["sn"] = asset.sn;
+        doc["type"] = asset.type;
+        doc["id"] = asset.id;
+        doc["managerJson"] = asset.managerJson;
+
+        std::string output;
+        serializeJson(doc, output);
+        request->send(200, "application/json", output.c_str());
+      }
+    }
+    else
+    {
+      DynamicJsonDocument doc(8192);
       JsonArray assets = doc.createNestedArray("assets");
 
       for (int i = 0; i < assetManager.assets.size(); i++)
@@ -439,30 +472,37 @@ void startWebServer()
 
       std::string output;
       serializeJson(doc, output);
-      request->send(200, "application/json", output.c_str()); });
+      request->send(200, "application/json", output.c_str());
+    } }); // Add closing parenthesis here
 
   // Delete asset endpoint
-  server.on("/manager/assets/:id", HTTP_DELETE, [](AsyncWebServerRequest *request)
+  server.on("/manager/assets", HTTP_DELETE, [](AsyncWebServerRequest *request)
             {
-
-      // take the mutex cause we are going to access the mqtt client
-      if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+    // take the mutex cause we are going to access the mqtt client
+    if (xSemaphoreTake(mqttClientMutex, portMAX_DELAY) == pdTRUE)
+    {
+      if (request->hasParam("id"))
+    {
+      String id = request->getParam("id")->value();
+      if (openRemoteMqtt.deleteAsset("master", id.c_str()))
       {
-        String id = request->pathArg(0);
-        if (openRemoteMqtt.deleteAsset("master", id.c_str()))
+        if (assetManager.deleteDeviceAssetById(id.c_str()))
         {
-          if (assetManager.deleteDeviceAsset(id.c_str()))
-          {
-            request->send(200, "application/json", "{\"status\": \"ok\"}");
-          }
-          else
-          {
-            request->send(500, "application/json", "{\"status\": \"error\"}");
-          }
+          request->send(200, "application/json", "{\"status\": \"ok\"}");
         }
-        // give the mutex back
-        xSemaphoreGive(mqttClientMutex);
-      } });
+        else
+        {
+          request->send(500, "application/json", "{\"status\": \"error\"}");
+        }
+      }
+    }
+    else
+    {
+      request->send(404, "application/json", "{\"status\": \"error\"}");
+    }
+      // give the mutex back
+      xSemaphoreGive(mqttClientMutex);
+    } });
 
   // Start the server
   server.begin();

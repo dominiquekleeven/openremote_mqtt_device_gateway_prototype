@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>OpenRemote Edge - View Asset</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+    <main>
+
+        <div class="actions">
+            <a href="/">Go back</a>
+            <button id="updateButton">Update</button>
+            <button onclick="deleteAsset()">Delete</button>
+        </div>
+
+        <hr />
+        <div class="assets">
+            <h3 style="margin-bottom: 0;">Asset details <span id="assetId"></span></h3>
+
+            <span id="jsonerror"></span>
+            <!-- JSON TextArea -->
+            <textarea onkeyup="textareaOnChange()" id="assetDetails" rows="30" cols="50">
+
+
+            </textarea>
+        </div>
+    </main>
+</body>
+
+<script>
+
+    function getIdParamValue() {
+        var urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('id');
+    }
+
+    function fetchAssetDetails() {
+        var assetDetails = {};
+        console.info('Fetching asset details for asset ID: ' + getIdParamValue())
+        fetch('/manager/assets?id=' + getIdParamValue())
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                assetDetails = data.managerJson;
+                if (assetDetails.length === 0) {
+                    displayTableMessage('No asset details found');
+                    return;
+                }
+
+                displayAssetDetails(assetDetails)
+            })
+            .catch(error => {
+                if (assetDetails.length === 0) {
+                    displayTableMessage('Failed to fetch asset details');
+                    console.warn("Failed to fetch asset details")
+                    return;
+                }
+            });
+    }
+
+    function displayAssetDetails(assetDetails) {
+        var assetDetailsTextArea = document.getElementById('assetDetails');
+        var json = JSON.parse(assetDetails)
+        var prettyJson = JSON.stringify(json, null, 2);
+        assetDetailsTextArea.innerHTML = prettyJson;
+        document.getElementById('assetId').innerHTML = ' - ' + json.id;
+    }
+
+    function isJsonValid(json) {
+
+        if (json === '') {
+            return true;
+        }
+        try {
+            JSON.parse(json);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function textareaOnChange() {
+        var assetDetailsTextArea = document.getElementById('assetDetails');
+        var json = assetDetailsTextArea.value;
+        if (!isJsonValid(json)) {
+            document.getElementById('jsonerror').innerHTML = 'JSON is invalid, unable to update asset details.';
+            //disable update button
+            document.getElementById('updateButton').disabled = true;
+            return;
+        }
+        document.getElementById('jsonerror').innerHTML = '';
+        //enable update button
+        document.getElementById('updateButton').disabled = false;
+    }
+
+
+    function deleteAsset() {
+        var assetId = getIdParamValue();
+        if (assetId === null) {
+            console.error('Asset ID is missing');
+            return;
+        }
+
+        var confirmation = confirm('Are you sure you want to delete asset with ID: ' + assetId + '?');
+        if (confirmation) {
+            console.log('Deleting asset with ID: ' + assetId);
+            fetch('manager/assets?id=' + assetId, {
+                method: 'DELETE'
+            }).then(response => response.json()).then(data => {
+                console.log(data);
+                if (data.status === 'ok')
+                    window.location.href = '/';
+
+            }).catch((error) => {
+                alert('Failed to delete asset');
+                console.error('Error:', error);
+            });
+
+        }
+    }
+
+    fetchAssetDetails();
+
+</script>
+
+</html>

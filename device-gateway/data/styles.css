@@ -96,7 +96,6 @@ table {
     width: 100%;
     padding: 5px;
     border-collapse: collapse;
-    border-radius: 5px;
     font-size: 0.9em;
 }
 
@@ -127,11 +126,39 @@ button {
     color: white;
     border: none;
     padding: 5px 10px;
-    border-radius: 5px;
     cursor: pointer;
     transition: 0.1s;
 }
 
 button:hover {
     background-color: var(--secondary-color);
+}
+
+button:disabled {
+    background-color: #d3d3d3;
+    color: #a3a3a3;
+    cursor: not-allowed;
+}
+
+a {
+    color: var(--secondary-color);
+    text-decoration: none;
+    transition: 0.1s;
+}
+
+a:hover {
+    color: var(--primary-color);
+}
+
+.actions {
+    display: flex;
+    gap: 1em;
+    align-items: center;
+}
+
+#jsonerror {
+    color: red;
+
+    font-size: 0.9em;
+    font-weight: 500;
 }

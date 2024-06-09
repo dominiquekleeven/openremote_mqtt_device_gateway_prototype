@@ -44,7 +44,6 @@
                     cell.innerHTML = 'No assets found';
                     return;
                 }
-
                 displayAssets(assets)
             })
             .catch(error => {
@@ -75,33 +74,24 @@
             cell1.innerHTML = '<div class="asset"><span class="type">' + asset.type + ' </span> ' + '<span class="id">' + asset.id + '</span></div>';
             cell2.innerHTML = '<span class="serial">' + asset.sn + '</span>';
             var cell3 = row.insertCell(2);
-            var deleteButton = document.createElement('button');
-            deleteButton.innerHTML = 'DEL';
-            deleteButton.onclick = function () {
-                deleteAsset(asset.id);
+            var viewButton = document.createElement('button');
+            viewButton.innerHTML = 'VIEW';
+            viewButton.onclick = function () {
+                navigateToAsset(asset.id);
             }
-            cell3.appendChild(deleteButton);
+            cell3.appendChild(viewButton);
             var assetCount = document.getElementById('assetCount');
             assetCount.innerHTML = '(' + assets.length + ')';
         });
     }
 
-
-
-    function deleteAsset(assetId) {
-        var confirmation = confirm('Are you sure you want to delete asset with ID: ' + assetId + '?');
-        if (confirmation) {
-            console.log('Deleting asset with ID: ' + assetId);
-            fetch('manager/assets/' + assetId, {
-                method: 'DELETE'
-            }).then(response => response.json()).then(data => {
-                console.log('Success:', data);
-            }).catch((error) => {
-                console.error('Error:', error);
-            });
-            location.reload();
-        }
+    function navigateToAsset(id) {
+        window.location.href = '/view?id=' + id;
     }
+
+
+
+
 
     fetchAssets();
 </script>

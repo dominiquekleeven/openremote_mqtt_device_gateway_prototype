@@ -137,6 +137,19 @@ public:
         return "";
     }
 
+    bool deleteDeviceAssetById(std::string assetId)
+    {
+        for (int i = 0; i < assets.size(); i++)
+        {
+            if (assets[i].id.c_str() == assetId)
+            {
+                assets.erase(assets.begin() + i);
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// @brief Remove a device asset from the device manager (should only be called after confirming the device has been removed from OpenRemote)
     DeviceAsset getDeviceAsset(std::string deviceSerial)
     {
@@ -148,19 +161,6 @@ public:
             }
         }
         return DeviceAsset();
-    }
-
-    bool deleteDeviceAsset(std::string deviceSerial)
-    {
-        for (int i = 0; i < assets.size(); i++)
-        {
-            if (assets[i].sn.c_str() == deviceSerial)
-            {
-                assets.erase(assets.begin() + i);
-                return true;
-            }
-        }
-        return false;
     }
 
     /// @brief Get a device asset by ID
