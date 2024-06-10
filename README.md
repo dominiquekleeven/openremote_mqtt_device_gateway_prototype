@@ -53,5 +53,6 @@ This project uses [PlatformIO](https://platformio.org/) for its development envi
 - Web interface for managing the locally onboarded assets/devices. (Available at the IP of the Gateway)
 - Reconnection procedures for both MQTT and WIFI.
 - Persisting asset data in NVS.
+***
 
 
