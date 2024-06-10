@@ -43,6 +43,15 @@ This project uses [PlatformIO](https://platformio.org/) for its development envi
 
 
 
-
+***
+### Device Gateway Features
+- Local asset management, including json data of the asset representation in OpenRemote.
+- Onboarding process for IoT devices over local UDP.
+- Processing and forwarding data received from devices over UDP, attempts publish data for multiple attributes at once.
+- Processing and forwarding control events from OpenRemote to the specified device over UDP.
+- Acknowledging pending attribute events received from OpenRemote.
+- Web interface for managing the locally onboarded assets/devices. (Available at the IP of the Gateway)
+- Reconnection procedures for both MQTT and WIFI.
+- Persisting asset data in NVS.
 
 
