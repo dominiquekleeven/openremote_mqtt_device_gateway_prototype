@@ -322,6 +322,27 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
         xSemaphoreGive(pubSubSemaphore);
       }
     }
+
+    if (deviceMessage.device_type == AIR_QUALITY_SENSOR_ASSET)
+    {
+      std::string assetId = assetManager.getDeviceAssetId(deviceMessage.device_sn);
+      JsonDocument doc;
+      deserializeJson(doc, deviceMessage.data);
+      // get the semaphore cause we are going to access the mqtt client
+      if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+      {
+        JsonDocument attributeTemplateDoc;
+        attributeTemplateDoc["temperature"] = doc["temperature"].as<std::string>();
+        attributeTemplateDoc["humidity"] = doc["humidity"].as<std::string>();
+        attributeTemplateDoc["gasResistance"] = doc["gas"].as<std::string>();
+        attributeTemplateDoc["altitude"] = doc["altitude"].as<std::string>();
+        attributeTemplateDoc["pressure"] = doc["pressure"].as<std::string>();
+
+        openRemoteMqtt.updateMultipleAttributes("master", assetId, attributeTemplateDoc.as<std::string>(), false);
+        // give the semaphore back
+        xSemaphoreGive(pubSubSemaphore);
+      }
+    }
   }
 }
 
@@ -371,6 +392,22 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
     if (deviceMessage.device_type == ENVIRONMENT_SENSOR_ASSET)
     {
       EnvironmentSensorAsset asset = EnvironmentSensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
+      std::string json = asset.toJson();
+      // get the semaphore cause we are going to access the mqtt client
+      if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+      {
+        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        {
+          Serial.println("+ Sent asset create request");
+        }
+        // give the semaphore back
+        xSemaphoreGive(pubSubSemaphore);
+      }
+    }
+
+    if (deviceMessage.device_type == AIR_QUALITY_SENSOR_ASSET)
+    {
+      AirQualitySensorAsset asset = AirQualitySensorAsset(deviceMessage.device_name.c_str(), deviceMessage.device_sn.c_str(), deviceMessage.device_type.c_str());
       std::string json = asset.toJson();
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)

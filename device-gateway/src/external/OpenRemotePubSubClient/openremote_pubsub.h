@@ -50,6 +50,29 @@ public:
         return client.publish(topic, payload);
     }
 
+    bool updateMultipleAttributes(std::string realm, std::string assetId, std::string attributeTemplate, bool subscribeToResponse = false)
+    {
+        if (!client.connected())
+        {
+            return false;
+        }
+        char topic[256];
+        snprintf(topic, sizeof(topic), "%s/%s/operations/assets/%s/attributes/update", realm.c_str(), clientId.c_str(), assetId.c_str());
+
+        if (subscribeToResponse)
+        {
+            char responseTopic[256];
+            snprintf(responseTopic, sizeof(responseTopic), "%s/response", topic);
+            if (!client.subscribe(responseTopic))
+            {
+                return false;
+            }
+        }
+
+        const char *payload = attributeTemplate.c_str();
+        return client.publish(topic, payload);
+    }
+
     /// @brief Get an attribute
     /// @param realm
     /// @param assetId (ID of the asset, 22 character string)

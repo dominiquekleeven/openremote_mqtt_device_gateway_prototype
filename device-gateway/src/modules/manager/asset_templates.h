@@ -5,6 +5,7 @@
 #define PLUG_ASSET "PlugAsset"
 #define PRESENCE_SENSOR_ASSET "PresenceSensorAsset"
 #define ENVIRONMENT_SENSOR_ASSET "EnvironmentSensorAsset"
+#define AIR_QUALITY_SENSOR_ASSET "AirQualitySensorAsset"
 
 struct BaseAsset
 {
@@ -88,5 +89,47 @@ struct EnvironmentSensorAsset : BaseAsset
     {
         std::vector<std::string> extras = {"temperature", "relativeHumidity", "NO2Level", "ozoneLevel", "particlesPM1", "particlesPM10", "particlesPM2_5"};
         return BaseAsset::toJson(extras);
+    }
+};
+
+struct AirQualitySensorAsset : BaseAsset
+{
+    AirQualitySensorAsset(std::string name, std::string sn, std::string type) : BaseAsset(name, sn, type)
+    {
+    }
+
+    std::string toJson()
+    {
+        std::vector<std::string> extras = {"temperature", "humidity", "pressure", "altitude", "gasResistance"};
+
+        JsonDocument doc;
+        doc["type"] = "ThingAsset";
+        doc["name"] = name;
+
+        JsonObject attributes = doc["attributes"].to<JsonObject>();
+        if (extras.size() > 0)
+        {
+            for (int i = 0; i < extras.size(); i++)
+            {
+                JsonObject extra = attributes[extras[i]].to<JsonObject>();
+                extra["type"] = "positiveNumber";
+                JsonObject extraMeta = extra["meta"].to<JsonObject>();
+                extraMeta["readOnly"] = true;
+            }
+        }
+
+        JsonObject notes = attributes["notes"].to<JsonObject>();
+        JsonObject location = attributes["location"].to<JsonObject>();
+        JsonObject serial = attributes["sn"].to<JsonObject>();
+        JsonObject serialMeta = serial["meta"].to<JsonObject>();
+
+        serialMeta["readOnly"] = true;
+        serial["name"] = "sn";
+        serial["value"] = sn;
+        serial["type"] = "text";
+
+        std::string output;
+        serializeJson(doc, output);
+        return output;
     }
 };
