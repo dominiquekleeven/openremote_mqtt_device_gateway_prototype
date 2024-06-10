@@ -22,16 +22,16 @@ using namespace std;
 #define REVISION 5
 
 // Global Variables
-WiFiClientSecure wifiClient;
-PubSubClient mqttClient(wifiClient); // passed to openRemoteMqtt - which wraps PubSubClient
-OpenRemotePubSub openRemoteMqtt(mqtt_client_id, mqttClient);
-Preferences preferences;
-WiFiUDP udp;
-AsyncWebServer server(80);
-AssetManager assetManager(preferences);
+WiFiClientSecure wifiClient;                                 // WiFi client for secure connections
+PubSubClient mqttClient(wifiClient);                         // passed to openRemoteMqtt - which wraps PubSubClient
+OpenRemotePubSub openRemoteMqtt(mqtt_client_id, mqttClient); // OpenRemote PubSub client
+Preferences preferences;                                     // Preferences for storing asset data (non-volatile memory)
+WiFiUDP udp;                                                 // UDP for local device communication
+AsyncWebServer server(80);                                   // Management interface
+AssetManager assetManager(preferences);                      // Asset manager
 
 // Semaphore
-SemaphoreHandle_t pubSubSemaphore;
+SemaphoreHandle_t pubSubSemaphore; // Semaphore for accessing the mqtt client
 
 // Function Prototypes
 void mqttConnectionHandler(void *pvParameters);
@@ -42,6 +42,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage);
 void udpHandleAliveMessage(DeviceMessage deviceMessage);
 void startWebServer();
 
+// Global Variables
 unsigned int wifiConnectionAttempts = 0;
 unsigned int wifiConnectionAttemptsMax = 10;
 
@@ -416,133 +417,138 @@ void startWebServer()
   // Serve asset view page
   server.on("/view", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-    if(request->hasParam("id")){
-      String id = request->getParam("id")->value();
-      request->send(SPIFFS, "/view.html", "text/html");
-    } else {
-      request->send(404, "text/plain", "404: Not Found");
-    } });
+        if (request->hasParam("id"))
+        {
+            String id = request->getParam("id")->value();
+            request->send(SPIFFS, "/view.html", "text/html");
+        }
+        else
+        {
+            request->send(404, "text/plain", "404: Not Found");
+        } });
 
   // List - Single asset endpoint
   server.on("/manager/assets", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-    if (request->hasParam("id"))
-    {
-      String id = request->getParam("id")->value();
-      DeviceAsset asset = assetManager.getDeviceAssetById(id.c_str());
-      if (asset.id == "")
-      {
-        request->send(404, "application/json", "{\"status\": \"error\"}");
-      }
-      else
-      {
-        JsonDocument doc;
-        doc["sn"] = asset.sn;
-        doc["type"] = asset.type;
-        doc["id"] = asset.id;
-        doc["managerJson"] = asset.managerJson;
+        if (request->hasParam("id"))
+        {
+            String id = request->getParam("id")->value();
+            DeviceAsset asset = assetManager.getDeviceAssetById(id.c_str());
+            if (asset.id == "")
+            {
+                request->send(404, "application/json", "{\"status\": \"error\"}");
+            }
+            else
+            {
+                JsonDocument doc;
+                doc["sn"] = asset.sn;
+                doc["type"] = asset.type;
+                doc["id"] = asset.id;
+                doc["managerJson"] = asset.managerJson;
 
-        std::string output;
-        ArduinoJson::serializeJson(doc, output);
-        request->send(200, "application/json", output.c_str());
-      }
-    }
-    else
-    {
-      JsonDocument doc;
-      JsonArray assets = doc["assets"].to<JsonArray>();
+                std::string output;
+                ArduinoJson::serializeJson(doc, output);
+                request->send(200, "application/json", output.c_str());
+            }
+        }
+        else
+        {
+            JsonDocument doc;
+            JsonArray assets = doc["assets"].to<JsonArray>();
 
-      for (int i = 0; i < assetManager.assets.size(); i++)
-      {
-        DeviceAsset asset = assetManager.assets[i];
-        JsonObject assetJson = assets.add<JsonObject>();
-        assetJson["sn"] = asset.sn;
-        assetJson["type"] = asset.type;
-        assetJson["id"] = asset.id;
-      }
-      std::string output;
-      ArduinoJson::serializeJson(doc, output);
-      request->send(200, "application/json", output.c_str());
-    } });
+            for (int i = 0; i < assetManager.assets.size(); i++)
+            {
+                DeviceAsset asset = assetManager.assets[i];
+                JsonObject assetJson = assets.add<JsonObject>();
+                assetJson["sn"] = asset.sn;
+                assetJson["type"] = asset.type;
+                assetJson["id"] = asset.id;
+            }
+            std::string output;
+            ArduinoJson::serializeJson(doc, output);
+            request->send(200, "application/json", output.c_str());
+        } });
 
   // Delete asset endpoint
   server.on("/manager/assets", HTTP_DELETE, [](AsyncWebServerRequest *request)
             {
-    if (request->hasParam("id"))
-    {
-      String id = request->getParam("id")->value();
-      // take the semaphore cause we are going to access the mqtt client
-        if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+        if (request->hasParam("id"))
         {
-          if (assetManager.deleteDeviceAssetById(id.c_str()))
-          {
-            openRemoteMqtt.deleteAsset("master", id.c_str());
-            request->send(200, "application/json", "{\"status\": \"ok\"}");
-          }
-          else
-          {
-            request->send(500, "application/json", "{\"status\": \"error\"}");
-          }
-          // give the semaphore back
-          xSemaphoreGive(pubSubSemaphore);
-        }
-        else
-        {
-          request->send(404, "application/json", "{\"status\": \"error\"}");
-        }
-      } });
+            String id = request->getParam("id")->value();
+            // take the semaphore because we are going to access the mqtt client
+            if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+            {
+                if (assetManager.deleteDeviceAssetById(id.c_str()))
+                {
+                    openRemoteMqtt.deleteAsset("master", id.c_str());
+                    request->send(200, "application/json", "{\"status\": \"ok\"}");
+                }
+                else
+                {
+                    request->send(500, "application/json", "{\"status\": \"error\"}");
+                }
+                // give the semaphore back
+                xSemaphoreGive(pubSubSemaphore);
+            }
+            else
+            {
+                request->send(404, "application/json", "{\"status\": \"error\"}");
+            }
+        } });
 
   // Update asset endpoint, uses buffer to store large requests
   server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
                        {
-    if (request->hasParam("id") && request->url () == "/manager/assets" && request->method() == HTTP_PUT)
-    {
-      String id = request->getParam("id")->value();
-        if (index == 0) {
-            requestBuffers[id].clear();
-        }
-        requestBuffers[id].insert(requestBuffers[id].end(), data, data + len);
-
-    if (index + len == total) {
-      std::vector<uint8_t>& buffer = requestBuffers[id];
-      JsonDocument doc;
-      ArduinoJson::deserializeJson(doc, buffer.data(), buffer.size());
-      std::string json = doc.as<std::string>();
-
-      // take the semaphore cause we are going to access the mqtt client
-      if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
-      {
-        if (assetManager.updateDeviceAssetJson(id.c_str(), json.c_str()))
+        if (request->hasParam("id") && request->url() == "/manager/assets" && request->method() == HTTP_PUT)
         {
-          openRemoteMqtt.updateAsset("master", id.c_str(), json.c_str());
-          request->send(200, "application/json", "{\"status\": \"ok\"}");
-        }
-        else
-        {
-          request->send(500, "application/json", "{\"status\": \"error\"}");
-        }
-        // give the semaphore back
-        xSemaphoreGive(pubSubSemaphore);
-      }
-      else
-      {
-        request->send(404, "application/json", "{\"status\": \"error\"}");
-      }
-        // Clear the buffer after processing
-      requestBuffers.erase(id);
-    }
-    } });
+            String id = request->getParam("id")->value();
+            if (index == 0)
+            {
+                requestBuffers[id].clear();
+            }
+            requestBuffers[id].insert(requestBuffers[id].end(), data, data + len);
 
-  // Endpoint to get local ip + free heap space + uptime
+            if (index + len == total)
+            {
+                std::vector<uint8_t>& buffer = requestBuffers[id];
+                JsonDocument doc;
+                ArduinoJson::deserializeJson(doc, buffer.data(), buffer.size());
+                std::string json = doc.as<std::string>();
+
+                // take the semaphore because we are going to access the mqtt client
+                if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+                {
+                    if (assetManager.updateDeviceAssetJson(id.c_str(), json.c_str()))
+                    {
+                        openRemoteMqtt.updateAsset("master", id.c_str(), json.c_str());
+                        request->send(200, "application/json", "{\"status\": \"ok\"}");
+                    }
+                    else
+                    {
+                        request->send(500, "application/json", "{\"status\": \"error\"}");
+                    }
+                    // give the semaphore back
+                    xSemaphoreGive(pubSubSemaphore);
+                }
+                else
+                {
+                    request->send(404, "application/json", "{\"status\": \"error\"}");
+                }
+                // Clear the buffer after processing
+                requestBuffers.erase(id);
+            }
+        } });
+
+  // Endpoint to get local IP + free heap space + uptime
   server.on("/system/status", HTTP_GET, [](AsyncWebServerRequest *request)
             {
-      JsonDocument doc;
-      doc["ip"] = WiFi.localIP();
-      doc["heap"] = ESP.getFreeHeap() / 1024;
-      doc["uptime"] = millis() / 1000;
-      std::string output;
-      ArduinoJson::serializeJson(doc, output);
-      request->send(200, "application/json", output.c_str()); });
+        JsonDocument doc;
+        doc["ip"] = WiFi.localIP();
+        doc["heap"] = ESP.getFreeHeap() / 1024;
+        doc["uptime"] = millis() / 1000;
+        std::string output;
+        ArduinoJson::serializeJson(doc, output);
+        request->send(200, "application/json", output.c_str()); });
 
   // Start the server
   server.begin();

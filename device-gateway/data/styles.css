@@ -3,7 +3,6 @@
     --secondary-color: #4c4c4c;
     --secondary-color-light: #e5e5e5;
     --text-color: #4c4c4c;
-
 }
 
 html {
@@ -178,7 +177,6 @@ textarea {
     border: 2px solid var(--secondary-color-light);
     border-radius: 0;
 }
-
 
 textarea:focus-visible {
     border: 2px solid var(--primary-color) !important;

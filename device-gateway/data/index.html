@@ -32,10 +32,10 @@
         </div>
     </main>
 </body>
-
 <script>
     function fetchAssets() {
         var assets = [];
+
         fetch('/manager/assets')
             .then(response => response.json())
             .then(data => {
@@ -110,9 +110,6 @@
                 return;
             });
     }
-
-
-
 
     getSystemStatus();
     fetchAssets();

@@ -11,7 +11,7 @@ int initialRelayState = LOW;
 
 bool onBoarding = true; // Always send onboarding message on startup
 
-const char *deviceName = "RelaySwitch";   // Name of the device
+const char *deviceName = "Relay Switch";  // Name of the device
 const char *serialNumber = "Z02RL-ARKXF"; // Serial number of the device
 const char *deviceType = "PlugAsset";     // Type of the device
 

@@ -14,17 +14,13 @@
             <button onclick="updateAsset()" id="updateButton">Update</button>
             <button onclick="deleteAsset()">Delete</button>
         </div>
-
         <hr />
         <div class="assets">
             <h3 style="margin-bottom: 0;">Asset details <span id="assetId"></span></h3>
-
             <span id="jsonerror"></span>
             <span id="success"></span>
             <!-- JSON TextArea -->
             <textarea onkeyup="textareaOnChange()" id="assetDetails" rows="30" cols="50">
-
-
             </textarea>
         </div>
     </main>
@@ -47,7 +43,6 @@
                     displayTableMessage('No asset details found');
                     return;
                 }
-
                 displayAssetDetails(assetDetails)
             })
             .catch(error => {
@@ -71,7 +66,6 @@
     }
 
     function isJsonValid(json) {
-
         if (json === '') {
             return true;
         }
@@ -153,9 +147,7 @@
             });
         }
     }
-
     fetchAssetDetails();
-
 </script>
 
 </html>
