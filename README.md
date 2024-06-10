@@ -4,33 +4,45 @@ This repository contains a prototype that functions as a IoT Device Gateway, its
 ### Repository contents
 - ```device-gateway```: The prototype source code
 - ```gateway-motion-sensor-client```: Source code for a client that publishes motion data over UDP
-- ```gateway-climate-sensor-client```: Source code for a client that publishes climate ```(temperature, humidity)``` data over UDP
-- ```OpenRemotePubSubClient```: Wrapper library for the MQTT Gateway API topics, depends on the PubSubClient library.
+- ```gateway-climate-sensor-client```: Source code for a client that sends climate ```(temperature, humidity)``` data over UDP
+- ```gateway-airquality-sensor-client```: Source code for a client that sends air quality data ```{temperature, humidity, gasResistance, altitude, pressure}``` over UDP
+- ```gateway-relay-actuator-client```: Source code for a client that can be controlled over UDP, allowing the toggling of a relay.
 
 ### IDE
-This project uses [PlatformIO](https://platformio.org/) for its development environment
+This project uses [PlatformIO](https://platformio.org/) for its development environment, this includes dependency management as well.
 ***
 
-### Hardware Setup
-> ```Device Gateway```
-- T-Relay S3 (ESP32 S3) - [Product documentation](https://github.com/Xinyuan-LilyGO/LilyGo-T-Relay/blob/main/docs/RELAY_ESP32S3.MD)
-- Physical Light (controlled through the Relay)
+
+### Flashing information
+- The device gateway uses SPIFFS for serving webcontent, when using VSCode + PlatformIO you can simply upload the system image, which will transfer the contents from the data folder.
+- For the clients, adjust the PIN constants with your wiring.
+
+### Devices
+> ```IoT Device Gateway Prototype```
+- ESP32 (Generic 4MB Flash, 512KB SRAM)
+- Arduino Framework
+- Leverages FreeRTOS for task management
+- Uses preferences for NVS storage
+- Uses SPIFFS for serving HTML
 > ```Motion Sensor ```
 - Wemos D1 Mini (ESP8266)
-- PIR Sensor
+- Arduino Framework
+- IR Pyroelectric Infrared PIR Motion Sensing Detector Module
 > ```Climate Sensor``` 
 - Wemos D1 Mini (ESP8266)
-- DHT22 Sensor
+- Arduino Framework
+- DHT22 Thermometer Temperature and Humidity Sensor
+> ```Relay Actuator``` 
+- Wemos D1 Mini (ESP8266)
+- Arduino Framework
+-  5V Relay 1-Channel High-active or Low-active
+> ```Air Quality Sensor``` 
+- Wemos D1 Mini (ESP8266)
+- Arduino Framework
+- BME680 Sensor Module with Level Converter - Air Pressure - Air Quality - Humidity - Temperature
 
 
-### Software  Setup
- > ```Device Gateway```
-- Arduino Framework
-- Additionally leverages FreeRTOS for multi-tasking and Preferences for storing data locally.
-> ```Motion Sensor Client```
-- Arduino Framework
-> ```Climate Sensor Client```
-- Arduino Framework
+
 
 
 
