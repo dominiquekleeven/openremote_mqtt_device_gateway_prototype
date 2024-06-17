@@ -11,7 +11,7 @@ int lastMotionState = LOW; // last PIR state
 
 bool onBoarding = true; // Always send onboarding message on startup
 
-const char *deviceName = "MotionSensor";        // Name of the device
+const char *deviceName = "Motion Sensor";       // Name of the device
 const char *serialNumber = "KH9NH-BKRFF";       // Serial number of the device
 const char *deviceType = "PresenceSensorAsset"; // Type of the device
 

@@ -142,7 +142,6 @@ void mqttConnectionHandler(void *pvParameters)
         if (openRemoteMqtt.client.connect(mqtt_client_id, mqtt_user, mqtt_pas))
         {
           Serial.println("+ MQTT connected");
-          openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
           if (openRemoteMqtt.subscribeToPendingGatewayEvents("master"))
           {
             Serial.println("+ Subscribed to pending gateway events");
@@ -167,7 +166,6 @@ void mqttConnectionHandler(void *pvParameters)
       if (openRemoteMqtt.client.connected() && WiFi.status() == WL_CONNECTED && (millis() - lastSystemStatusUpdate) > lastSystemStatusUpdateInterval)
       {
         lastSystemStatusUpdate = millis();
-        openRemoteMqtt.updateAttribute("master", gatewayAssetId, "gatewayStatus", "3", false);
       }
       xSemaphoreGive(pubSubSemaphore);
     }
@@ -217,17 +215,54 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
     std::string event = doc.as<std::string>();
 
     Serial.println("Pending gateway event received:");
-    Serial.println(event.c_str());
 
-    // Grab the semaphore, we are going to access the mqtt client
-    if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+    std::string ackId = doc["ackId"].as<std::string>();
+    bool isAttributeEvent = doc["event"]["eventType"].as<std::string>() == "attribute";
+    std::string assetId = doc["event"]["ref"]["id"].as<std::string>();
+    std::string eventValue = doc["event"]["value"].as<std::string>();
+    std::string eventAttribute = doc["event"]["ref"]["name"].as<std::string>();
+
+    Serial.print("Asset ID: ");
+    Serial.println(assetId.c_str());
+    Serial.print("Event attribute: ");
+    Serial.println(eventAttribute.c_str());
+    Serial.print("Event value: ");
+    Serial.println(eventValue.c_str());
+
+    // Handle the event
+    if (isAttributeEvent)
     {
-      if (openRemoteMqtt.acknowledgeGatewayEvent(topic))
+      DeviceAsset deviceAsset = assetManager.getDeviceAssetById(assetId.c_str());
+
+      // Cant handle the event if the asset is not found
+      if (deviceAsset.id == "")
       {
-        Serial.println("+ Pending event acknowledged");
+        return;
       }
-      // Give the semaphore back
-      xSemaphoreGive(pubSubSemaphore);
+
+      // PlugAsset has a control attribute "onOff"
+      if (deviceAsset.type == PLUG_ASSET)
+      {
+        if (eventAttribute == "onOff")
+        {
+          std::string action = eventValue == "true" ? ACTION_ON : ACTION_OFF;
+          udp.beginPacket(deviceAsset.address, deviceAsset.port);
+          udp.write((const uint8_t *)action.c_str(), action.length());
+          udp.endPacket();
+        }
+      }
+
+      // Acknowledge the event
+      // Grab the semaphore, we are going to access the mqtt client
+      if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
+      {
+        if (openRemoteMqtt.acknowledgeGatewayEvent("master", ackId))
+        {
+          Serial.println("+ Pending event acknowledged");
+        }
+        // Give the semaphore back
+        xSemaphoreGive(pubSubSemaphore);
+      }
     }
   }
 }

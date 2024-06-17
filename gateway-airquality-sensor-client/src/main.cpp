@@ -50,15 +50,18 @@ unsigned long measurementInterval = 30000; // 30 seconds
 
 void loop()
 {
-  bme.performReading();
-  float temperature = bme.temperature;
-  float humidity = bme.humidity;
-  float pressure = bme.pressure / 100.0;
-  float gas = bme.gas_resistance / 1000.0;
-  float altitude = bme.readAltitude(1013.25);
 
   if (!onBoarding && millis() - measurementMillis > measurementInterval)
   {
+    // perform the reading, don't constatly performReading
+    // causes excessive heat
+    bme.performReading();
+    float temperature = bme.temperature;
+    float humidity = bme.humidity;
+    float pressure = bme.pressure / 100.0;
+    float gas = bme.gas_resistance / 1000.0;
+    float altitude = bme.readAltitude(1013.25);
+
     measurementMillis = millis();
     JsonDocument data;
     data["temperature"] = temperature;
