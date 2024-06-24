@@ -20,12 +20,11 @@ class OpenRemotePubSub
 {
 public:
     PubSubClient &client;
-    std::string clientId;
 
     /// @brief Constructor for OpenRemotePubSub, a class that simplifies the interaction with the OpenRemote MQTT API
     /// @param clientId Client ID for MQTT (must be unique per client, in case of gateway it must use the clientId from the gateway asset)
     /// @param _client Reference to a PubSubClient object
-    OpenRemotePubSub(std::string clientId, PubSubClient &_client) : clientId(clientId), client(_client)
+    OpenRemotePubSub(PubSubClient &_client) : client(_client)
     {
         if (client.getBufferSize() < 16384)
         {
@@ -40,7 +39,7 @@ public:
     /// @param eventValue (value of the event)
     /// @param subscribeToResponse (default is false)
     /// @return bool (true if the message was published)
-    bool updateAttribute(std::string realm, std::string assetId, std::string attributeName, std::string attributeValue, bool subscribeToResponse = false)
+    bool updateAttribute(std::string realm, std::string clientId, std::string assetId, std::string attributeName, std::string attributeValue, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -69,7 +68,7 @@ public:
     /// @param attributeTemplate (JSON representation of the list of attributes)
     /// @param subscribeToResponse (default is false)
     /// @return bool (true if the message was published)
-    bool updateMultipleAttributes(std::string realm, std::string assetId, std::string attributeTemplate, bool subscribeToResponse = false)
+    bool updateMultipleAttributes(std::string realm, std::string clientId, std::string assetId, std::string attributeTemplate, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -98,7 +97,7 @@ public:
     /// @param attributeName (name of the attribute)
     /// @param subscribeToResponse (default is false)
     /// @return bool (true if the message was published)
-    bool getAttribute(std::string realm, std::string assetId, std::string attributeName, bool subscribeToResponse = false)
+    bool getAttribute(std::string realm, std::string clientId, std::string assetId, std::string attributeName, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -125,8 +124,9 @@ public:
     /// @param responseIdentifier (can be any string, used to correlate the response with the request)
     /// @param subscribeToResponse (default is false)
     /// @return bool (true if the message was published)
-    bool createAsset(std::string realm, std::string assetTemplate, std::string responseIdentifier, bool subscribeToResponse = false)
+    bool createAsset(std::string realm, std::string clientId, std::string assetTemplate, std::string responseIdentifier, bool subscribeToResponse = false)
     {
+        Serial.println(clientId.c_str());
         if (!client.connected())
         {
             return false;
@@ -153,7 +153,7 @@ public:
     /// @param assetId (ID of the asset, 22 character string)
     /// @param subscribeToResponse (default is false)
     /// @return bool (true if the message was published)
-    bool deleteAsset(std::string realm, std::string assetId, bool subscribeToResponse = false)
+    bool deleteAsset(std::string realm, std::string clientId, std::string assetId, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -180,7 +180,7 @@ public:
     /// @param assetId (ID of the asset, 22 character string)
     /// @param assetTemplate (JSON representation of the asset)
     /// @param subscribeToResponse (default is false)
-    bool updateAsset(std::string realm, std::string assetId, std::string assetTemplate, bool subscribeToResponse = false)
+    bool updateAsset(std::string realm, std::string clientId, std::string assetId, std::string assetTemplate, bool subscribeToResponse = false)
     {
         if (!client.connected())
         {
@@ -207,7 +207,7 @@ public:
     /// @param realm (realm of the gateway)
     /// @param ackId (ID of the event to acknowledge)
     /// @return bool (true if the message was published)
-    bool acknowledgeGatewayEvent(std::string realm, std::string ackId)
+    bool acknowledgeGatewayEvent(std::string realm, std::string clientId, std::string ackId)
     {
         if (!client.connected())
         {
@@ -221,7 +221,7 @@ public:
     /// @brief Subscribe to pending gateway events
     /// @param realm (realm of the gateway)
     /// @return bool (true if the subscription was successful)
-    bool subscribeToPendingGatewayEvents(std::string realm)
+    bool subscribeToPendingGatewayEvents(std::string realm, std::string clientId)
     {
         if (!client.connected())
         {
@@ -230,6 +230,32 @@ public:
         char topic[256];
         snprintf(topic, sizeof(topic), "%s/%s/gateway/events/pending", realm.c_str(), clientId.c_str());
         return client.subscribe(topic);
+    }
+
+    bool autoProvisionDevice(std::string cert, std::string uniqueId, bool subscribeToResponse = true)
+    {
+        if (!client.connected())
+        {
+            return false;
+        }
+        char topic[256]; // /provisioning/<uniqueId>/request
+        snprintf(topic, sizeof(topic), "provisioning/%s/request", uniqueId.c_str());
+
+        if (subscribeToResponse)
+        {
+            char responseTopic[256];
+            snprintf(responseTopic, sizeof(responseTopic), "provisioning/%s/response", uniqueId.c_str());
+            if (!client.subscribe(responseTopic))
+            {
+                return false;
+            }
+        }
+
+        JsonDocument doc;
+        doc["type"] = "x509";
+        doc["cert"] = cert;
+
+        return client.publish(topic, doc.as<String>().c_str());
     }
 };
 

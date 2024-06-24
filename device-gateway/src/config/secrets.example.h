@@ -17,5 +17,4 @@ int mqtt_port = 8883;
 const char *mqtt_user = "<realm>:<client_id>";
 const char *mqtt_pas = "";
 
-// Root CA for MQTT
-const char *root_ca = "";
+

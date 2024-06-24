@@ -21,14 +21,22 @@ using namespace std;
 // Simple versioning - used for resetting preferences
 #define REVISION 5
 
+// Gateway will go through the provisioning flow of OpenRemote and then this will be set to true
+bool isGatewayProvisioned = false;
+char *autoProvisioningCerticate = nullptr;
+
+const char *mqtt_client_id = "";
+const char *mqtt_user = "";
+const char *mqtt_secret = "";
+
 // Global Variables
-WiFiClientSecure wifiClient;                                 // WiFi client for secure connections
-PubSubClient mqttClient(wifiClient);                         // passed to openRemoteMqtt - which wraps PubSubClient
-OpenRemotePubSub openRemoteMqtt(mqtt_client_id, mqttClient); // OpenRemote PubSub client
-Preferences preferences;                                     // Preferences for storing asset data (non-volatile memory)
-WiFiUDP udp;                                                 // UDP for local device communication
-AsyncWebServer server(80);                                   // Management interface
-AssetManager assetManager(preferences);                      // Asset manager
+WiFiClientSecure wifiClient;                 // WiFi client for secure connections
+PubSubClient mqttClient(wifiClient);         // passed to openRemoteMqtt - which wraps PubSubClient
+OpenRemotePubSub openRemoteMqtt(mqttClient); // OpenRemote PubSub client
+Preferences preferences;                     // Preferences for storing asset data (non-volatile memory)
+WiFiUDP udp;                                 // UDP for local device communication
+AsyncWebServer server(80);                   // Management interface
+AssetManager assetManager(preferences);      // Asset manager
 
 // Semaphore
 SemaphoreHandle_t pubSubSemaphore; // Semaphore for accessing the mqtt client
@@ -41,6 +49,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage);
 void udpHandleOnboardMessage(DeviceMessage deviceMessage);
 void udpHandleAliveMessage(DeviceMessage deviceMessage);
 void startWebServer();
+char *fsReadFileInternal(const char *path);
 
 // Global Variables
 unsigned int wifiConnectionAttempts = 0;
@@ -78,7 +87,24 @@ void setup()
   // local address
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+
+  // Set the CA Certificate (root_ca.pem from SPIFFS)
+  char *root_ca = fsReadFileInternal("/root_ca.pem");
+  if (!root_ca)
+  {
+    Serial.println("Failed to open root_ca.pem");
+    return;
+  }
   wifiClient.setCACert(root_ca);
+
+  // Set device chain certificate (device_chain.pem from SPIFFS)
+  char *device_chain = fsReadFileInternal("/device_chain.pem");
+  if (!device_chain)
+  {
+    Serial.println("Failed to open device_chain.pem");
+    return;
+  }
+  autoProvisioningCerticate = device_chain;
 
   // Preferences, used for storing asset data
   preferences.begin("asset-manager" + REVISION, false);
@@ -123,6 +149,23 @@ void loop()
   delay(100);
 }
 
+char *fsReadFileInternal(const char *path)
+{
+  File file = SPIFFS.open(path, "r");
+  if (!file)
+  {
+    Serial.printf("Failed to open file %s for reading\n", path);
+    return nullptr;
+  }
+
+  size_t size = file.size();
+  char *content = new char[size + 1];
+  file.readBytes(content, size);
+  content[size] = '\0';
+  file.close();
+  return content;
+}
+
 // MQTT Task
 void mqttConnectionHandler(void *pvParameters)
 {
@@ -139,10 +182,21 @@ void mqttConnectionHandler(void *pvParameters)
         Serial.print(", port: ");
         Serial.println(mqtt_port);
 
-        if (openRemoteMqtt.client.connect(mqtt_client_id, mqtt_user, mqtt_pas))
+        // provision the gateway
+        if (!isGatewayProvisioned && openRemoteMqtt.client.connect("provisioning"))
         {
           Serial.println("+ MQTT connected");
-          if (openRemoteMqtt.subscribeToPendingGatewayEvents("master"))
+          if (!isGatewayProvisioned && openRemoteMqtt.autoProvisionDevice(autoProvisioningCerticate, "device_unique_id"))
+          {
+            Serial.println("+ Sent auto-provisioning request");
+          }
+        }
+
+        // connect with the provisioned credentials
+        if (isGatewayProvisioned && openRemoteMqtt.client.connect(mqtt_client_id, mqtt_user, mqtt_secret))
+        {
+          Serial.println("+ MQTT connected");
+          if (openRemoteMqtt.subscribeToPendingGatewayEvents("master", mqtt_client_id))
           {
             Serial.println("+ Subscribed to pending gateway events");
           }
@@ -150,16 +204,11 @@ void mqttConnectionHandler(void *pvParameters)
           for (int i = 0; i < assetManager.assets.size(); i++)
           {
             DeviceAsset asset = assetManager.assets[i];
-            if (openRemoteMqtt.createAsset("master", asset.managerJson, asset.sn.c_str(), false))
+            if (openRemoteMqtt.createAsset("master", mqtt_client_id, asset.managerJson, asset.sn.c_str(), false))
             {
-              Serial.print("+ Sent asset data to OpenRemote, sn: ");
-              Serial.println(asset.sn.c_str());
+              Serial.println("+ Sent asset create request");
             }
           }
-        }
-        else
-        {
-          Serial.println("! MQTT connection failed");
         }
       }
 
@@ -192,6 +241,30 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
 
     JsonDocument doc;
     deserializeJson(doc, payload, length);
+
+    if (doc["type"].as<std::string>() == "error")
+    {
+      Serial.println("! Provisioning error");
+      ESP.restart();
+    }
+    else if (doc["type"].as<std::string>() == "success")
+    {
+      Serial.println("+ Provisioning response received");
+      Serial.println(doc.as<std::string>().c_str());
+      std::string clientId = doc["asset"]["attributes"]["clientId"]["value"].as<std::string>();
+      std::string clientSecret = doc["asset"]["attributes"]["clientSecret"]["value"].as<std::string>();
+      std::string realm = doc["realm"].as<std::string>();
+      mqtt_client_id = strdup(clientId.c_str());
+      mqtt_user = strdup((realm + ":" + clientId).c_str());
+      mqtt_secret = strdup(clientSecret.c_str());
+
+      if (mqtt_client_id)
+      {
+        Serial.println("+ Provisioning successful");
+        isGatewayProvisioned = true;
+        openRemoteMqtt.client.disconnect(); // we disconnect, and reconnect with the new credentials
+      }
+    }
 
     // Handle asset events
     bool isAssetEvent = doc["eventType"].as<std::string>() == "asset";
@@ -246,9 +319,14 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
         if (eventAttribute == "onOff")
         {
           std::string action = eventValue == "true" ? ACTION_ON : ACTION_OFF;
-          udp.beginPacket(deviceAsset.address, deviceAsset.port);
-          udp.write((const uint8_t *)action.c_str(), action.length());
-          udp.endPacket();
+
+          // send 5x to ensure the device receives the message (hack)
+          for (int i = 0; i < 5; i++)
+          {
+            udp.beginPacket(deviceAsset.address, deviceAsset.port);
+            udp.write((const uint8_t *)action.c_str(), action.length());
+            udp.endPacket();
+          }
         }
       }
 
@@ -256,7 +334,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       // Grab the semaphore, we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        if (openRemoteMqtt.acknowledgeGatewayEvent("master", ackId))
+        if (openRemoteMqtt.acknowledgeGatewayEvent("master", mqtt_client_id, ackId))
         {
           Serial.println("+ Pending event acknowledged");
         }
@@ -283,17 +361,17 @@ void udpHandler(void *pvParameters)
         DeviceMessage deviceMessage = DeviceMessage::fromJson(incomingPacket);
 
         // DATA - used for sending data from devices to the gateway
-        if (deviceMessage.message_type == DATA_MESSAGE)
+        if (isGatewayProvisioned && deviceMessage.message_type == DATA_MESSAGE)
         {
           udpHandleDataMessage(deviceMessage);
         }
         // ALIVE - used for device check, and updating connection details
-        if (deviceMessage.message_type == ALIVE_MESSAGE)
+        if (isGatewayProvisioned && deviceMessage.message_type == ALIVE_MESSAGE)
         {
           udpHandleAliveMessage(deviceMessage);
         }
         // ONBOARDING - used for onboarding devices locally and on OpenRemote
-        if (deviceMessage.message_type == ONBOARD_MESSAGE)
+        if (isGatewayProvisioned && deviceMessage.message_type == ONBOARD_MESSAGE)
         {
           udpHandleOnboardMessage(deviceMessage);
         }
@@ -337,7 +415,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        openRemoteMqtt.updateAttribute("master", assetId, "presence", deviceMessage.data, false);
+        openRemoteMqtt.updateAttribute("master", mqtt_client_id, assetId, "presence", deviceMessage.data, false);
         // give the semaphore back
         xSemaphoreGive(pubSubSemaphore);
       }
@@ -351,8 +429,8 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        openRemoteMqtt.updateAttribute("master", assetId, "temperature", doc["temperature"].as<std::string>(), false);
-        openRemoteMqtt.updateAttribute("master", assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
+        openRemoteMqtt.updateAttribute("master", mqtt_client_id, assetId, "temperature", doc["temperature"].as<std::string>(), false);
+        openRemoteMqtt.updateAttribute("master", mqtt_client_id, assetId, "relativeHumidity", doc["relativeHumidity"].as<std::string>(), false);
         // give the semaphore back
         xSemaphoreGive(pubSubSemaphore);
       }
@@ -373,7 +451,7 @@ void udpHandleDataMessage(DeviceMessage deviceMessage)
         attributeTemplateDoc["altitude"] = doc["altitude"].as<std::string>();
         attributeTemplateDoc["pressure"] = doc["pressure"].as<std::string>();
 
-        openRemoteMqtt.updateMultipleAttributes("master", assetId, attributeTemplateDoc.as<std::string>(), false);
+        openRemoteMqtt.updateMultipleAttributes("master", mqtt_client_id, assetId, attributeTemplateDoc.as<std::string>(), false);
         // give the semaphore back
         xSemaphoreGive(pubSubSemaphore);
       }
@@ -415,7 +493,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        if (openRemoteMqtt.createAsset("master", mqtt_client_id, json, deviceMessage.device_sn.c_str(), true))
         {
           Serial.println("+ Sent asset create request");
         }
@@ -431,7 +509,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        if (openRemoteMqtt.createAsset("master", mqtt_client_id, json, deviceMessage.device_sn.c_str(), true))
         {
           Serial.println("+ Sent asset create request");
         }
@@ -447,7 +525,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        if (openRemoteMqtt.createAsset("master", mqtt_client_id, json, deviceMessage.device_sn.c_str(), true))
         {
           Serial.println("+ Sent asset create request");
         }
@@ -463,7 +541,7 @@ void udpHandleOnboardMessage(DeviceMessage deviceMessage)
       // get the semaphore cause we are going to access the mqtt client
       if (xSemaphoreTake(pubSubSemaphore, portMAX_DELAY) == pdTRUE)
       {
-        if (openRemoteMqtt.createAsset("master", json, deviceMessage.device_sn.c_str(), true))
+        if (openRemoteMqtt.createAsset("master", mqtt_client_id, json, deviceMessage.device_sn.c_str(), true))
         {
           Serial.println("+ Sent asset create request");
         }
@@ -552,7 +630,7 @@ void startWebServer()
             {
                 if (assetManager.deleteDeviceAssetById(id.c_str()))
                 {
-                    openRemoteMqtt.deleteAsset("master", id.c_str());
+                    openRemoteMqtt.deleteAsset("master",mqtt_client_id,id.c_str());
                     request->send(200, "application/json", "{\"status\": \"ok\"}");
                 }
                 else
@@ -592,7 +670,7 @@ void startWebServer()
                 {
                     if (assetManager.updateDeviceAssetJson(id.c_str(), json.c_str()))
                     {
-                        openRemoteMqtt.updateAsset("master", id.c_str(), json.c_str());
+                        openRemoteMqtt.updateAsset("master", mqtt_client_id, id.c_str(), json.c_str());
                         request->send(200, "application/json", "{\"status\": \"ok\"}");
                     }
                     else
