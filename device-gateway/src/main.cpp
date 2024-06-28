@@ -67,6 +67,7 @@ void setup()
   }
 
   // WiFi connection
+
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -81,6 +82,7 @@ void setup()
       ESP.restart();
     }
   }
+
   wifiConnectionAttempts = 0;
   Serial.println("+ WiFi");
 
@@ -218,7 +220,7 @@ void mqttConnectionHandler(void *pvParameters)
       }
       xSemaphoreGive(pubSubSemaphore);
     }
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 // Callback function for MQTT, handles incoming messages
@@ -258,6 +260,13 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       mqtt_user = strdup((realm + ":" + clientId).c_str());
       mqtt_secret = strdup(clientSecret.c_str());
 
+      Serial.print("Client ID: ");
+      Serial.println(mqtt_client_id);
+      Serial.print("Client Secret: ");
+      Serial.println(mqtt_secret);
+      Serial.print("MQTT User: ");
+      Serial.println(mqtt_user);
+
       if (mqtt_client_id)
       {
         Serial.println("+ Provisioning successful");
@@ -269,6 +278,7 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
     // Handle asset events
     bool isAssetEvent = doc["eventType"].as<std::string>() == "asset";
     bool isCreationEvent = doc["cause"].as<std::string>() == "CREATE";
+    bool isUpdateEvent = doc["cause"].as<std::string>() == "UPDATE";
     std::string asset = doc["asset"].as<std::string>();
 
     if (isAssetEvent && isCreationEvent)
@@ -277,6 +287,13 @@ void mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
       Serial.print("+ Device onboarded, data: ");
       Serial.println(deviceAsset.managerJson.c_str());
       assetManager.addDeviceAsset(deviceAsset);
+    }
+
+    if (isAssetEvent && isUpdateEvent)
+    {
+      DeviceAsset deviceAsset = DeviceAsset::fromJson(asset);
+      Serial.print("+ Device updated");
+      assetManager.updateDeviceAsset(deviceAsset);
     }
   }
 
@@ -670,7 +687,7 @@ void startWebServer()
                 {
                     if (assetManager.updateDeviceAssetJson(id.c_str(), json.c_str()))
                     {
-                        openRemoteMqtt.updateAsset("master", mqtt_client_id, id.c_str(), json.c_str());
+                        openRemoteMqtt.updateAsset("master", mqtt_client_id, id.c_str(), json.c_str(), true);
                         request->send(200, "application/json", "{\"status\": \"ok\"}");
                     }
                     else

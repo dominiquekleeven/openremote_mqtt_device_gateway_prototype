@@ -167,6 +167,20 @@ public:
     }
 
     /// @brief Update the device asset JSON representation
+    bool updateDeviceAsset(DeviceAsset asset)
+    {
+        for (int i = 0; i < assets.size(); i++)
+        {
+            if (assets[i].id.c_str() == asset.id)
+            {
+                assets[i].managerJson = asset.managerJson.c_str();
+                updatePreferences();
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool updateDeviceAssetJson(std::string assetId, std::string json)
     {
         for (int i = 0; i < assets.size(); i++)
