@@ -1,5 +1,4 @@
 ![CleanShot 2024-06-10 at 20 46 01@2x](https://github.com/dominiquekleeven/openremote_mqtt_device_gateway_prototype/assets/10584854/8bc0756d-3bd1-4521-8296-8f961e6adbfa)
-![image](https://github.com/user-attachments/assets/1d559705-0d14-4807-9b58-9c1b12fab1c6)
 
 
 # OpenRemote Device Gateway Prototype
